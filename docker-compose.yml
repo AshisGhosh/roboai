@@ -1,0 +1,36 @@
+version: '3.8'
+services:
+  robosuite-simulation:
+    build:
+      context: ./robosim
+      dockerfile: Dockerfile
+    volumes:
+      - ./robosim:/app
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw 
+    environment:
+      - DISPLAY=${DISPLAY}
+      - MUJOCO_GL=osmesa
+      - XAUTHORITY=/root/.Xauthority  
+    # entrypoint: conda run -n robot_env 
+    # command: python -m robosuite.demos.demo_random_action
+    command: python -u -m robosim.main
+    # command: /bin/bash -c "while true; do sleep 30; done"
+    network_mode: host
+    profiles: ["dev"]
+  robomimic-simulation:
+    build:
+      context: ./robomimic_sim
+      dockerfile: Dockerfile
+    volumes:
+      - ./robomimic_sim:/app
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - MUJOCO_GL=osmesa
+      - XAUTHORITY=/root/.Xauthority
+    working_dir: /app
+    command: python -u robomimic_sim/main.py --debug --output /app/output
+    # command: /bin/bash -c "while true; do sleep 30; done"
+    network_mode: host
+  
+
