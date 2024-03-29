@@ -2,7 +2,7 @@
 FROM continuumio/miniconda3
 
 # Set the Python version
-ARG PYTHON_VERSION=3.8
+ARG PYTHON_VERSION=3.10
 
 # Set the MuJoCo version
 ARG MUJOCO_VERSION=3.1.3
@@ -47,8 +47,18 @@ RUN mkdir -p /usr/local/bin
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
-# Set the working directory to /app
+# Install Poetry
+RUN conda run -n robot_env pip install poetry
+RUN conda run -n robot_env poetry config virtualenvs.create false
+
+# Copy only the pyproject.toml and poetry.lock* to install dependencies
+COPY pyproject.toml poetry.lock* /app/
+
 WORKDIR /app
+
+# Install dependencies
+RUN conda run -n robot_env poetry install --no-dev
+
 
 # Use the entrypoint script to activate the Conda environment
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

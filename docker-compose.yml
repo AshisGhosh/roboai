@@ -13,7 +13,7 @@ services:
       - XAUTHORITY=/root/.Xauthority  
     # entrypoint: conda run -n robot_env 
     # command: python -m robosuite.demos.demo_random_action
-    command: python -u -m robosim.main
+    command: python -u -m robosim.quick_start
     # command: /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
     profiles: ["dev"]
@@ -29,8 +29,37 @@ services:
       - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
     working_dir: /app
-    command: python -u robomimic_sim/main.py --debug --output /app/output
+    command: python -u robomimic_sim/run_policy.py
     # command: /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
-  
+  robomimic-server:
+    build:
+      context: ./robomimic_sim
+      dockerfile: Dockerfile
+    volumes:
+      - ./robomimic_sim:/app
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - MUJOCO_GL=osmesa
+      - XAUTHORITY=/root/.Xauthority
+    working_dir: /app
+    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+    # command: /bin/bash -c "while true; do sleep 30; done"
+    network_mode: host
+  robosim:
+    image: robo_ai-robomimic-simulation
+    build:
+      context: ./robosim
+      dockerfile: Dockerfile
+    volumes:
+      - ./robosim:/app
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - MUJOCO_GL=osmesa
+      - XAUTHORITY=/root/.Xauthority
+    command: python -u -m robosim.robosim
+    network_mode: host
+
 

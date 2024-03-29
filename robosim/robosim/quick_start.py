@@ -82,7 +82,7 @@ class robosim:
             control_freq=20,
             has_renderer=True,
             render_camera="frontview",
-            camera_names=["frontview", ],
+            camera_names=["frontview", "agentview"],
             has_offscreen_renderer=True,
             use_object_obs=False,                  
             use_camera_obs=True,                       
