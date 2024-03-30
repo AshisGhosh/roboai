@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "crewai-roboai"
+version = "0.1.0"
+description = ""
+authors = ["AshisGhosh <ashisghosh@live.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = ">=3.10,<=3.13"
+crewai = {extras = ["tools"], version = "^0.22.5"}
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
