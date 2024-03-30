@@ -1,0 +1,22 @@
+ 	Task	Responder	sender_entity	sender_name	recipient	block	tool_type	tool	content
+ 	Robot	Entity.USER	Entity.USER			None			The task is to clear the table, it has the following objects: 'Milk', 'Cereal', and a 'Can'.
+ 	Robot	Entity.USER	Entity.USER	Entity.USER		None			[CANNOT RESPOND]
+ 	Robot	Entity.AGENT	Entity.USER			None			
+*	Robot	Entity.LLM	Entity.LLM			None			Robot: Please provide a detailed plan for me to clear the table with the given objects. I am equipped with 'pick' and 'place' skills.
+ 	Robot	Entity.USER	Entity.USER			None			
+ 	Robot	Entity.AGENT	Entity.USER			None			
+ 	Robot	Entity.LLM	Entity.LLM	Entity.LLM		None			[CANNOT RESPOND]
+ 	Planner	Entity.USER	Entity.USER			None			Robot: Please provide a detailed plan for me to clear the table with the given objects. I am equipped with 'pick' and 'place' skills.
+ 	Planner	Entity.USER	Entity.USER	Entity.USER		None			[CANNOT RESPOND]
+ 	Planner	Entity.AGENT	Entity.USER			None			
+*	Planner	Entity.LLM	Entity.LLM			None			1. Pick up the cup on the left side of the table. (1) 2. Place the cup on the ri... 14. Place the glass on the counter. (14) 15. The table is now clear. DONE. (15)
+*	Robot	Planner	Entity.USER	Planner		None			1. Pick up the cup on the left side of the table. (1) 2. Place the cup on the ri...(13) 14. Place the glass on the counter. (14) 15. The table is now clear. . (15)
+ 	Robot	Entity.USER	Entity.USER			None			
+ 	Robot	Entity.AGENT	Entity.USER			None			
+*	Robot	Entity.LLM	Entity.LLM			None			Robot: Thank you for the detailed plan, I will now execute each step to clear th...e necessary steps to clear the table. I am now ready to move on to my next task.
+ 	Robot	Entity.USER	Entity.USER			None			
+ 	Robot	Entity.AGENT	Entity.USER			None			
+ 	Robot	Entity.LLM	Entity.LLM	Entity.LLM		None			[CANNOT RESPOND]
+ 	Planner	Entity.USER	Entity.USER			None			Robot: Thank you for the detailed plan, I will now execute each step to clear th...e necessary steps to clear the table. I am now ready to move on to my next task.
+ 	Planner	Entity.USER	Entity.USER	Entity.USER		None			[CANNOT RESPOND]
+ 	Planner	Entity.AGENT	Entity.USER			None			
