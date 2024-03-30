@@ -1,0 +1,21 @@
+[
+    {
+        "model": "mistralai/mistral-7b-instruct:free",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": "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",
+        "tags": ["openrouter", "mistral"]
+    },
+    {
+        "model": "google/gemma-7b-it:free",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": "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",
+        "tags": ["openrouter", "gemma"]
+
+    },
+    {
+        "model": "huggingfaceh4/zephyr-7b-beta:free",
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": "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",
+        "tags": ["openrouter", "huggingface", "zephyr"]
+    }
+]
