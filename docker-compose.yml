@@ -119,4 +119,19 @@ services:
     # command:  /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
 
+  roboai:
+    build:
+      context: ./roboai
+      dockerfile: Dockerfile
+    volumes:
+      - ./roboai:/app
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - MUJOCO_GL=osmesa
+      - XAUTHORITY=/root/.Xauthority
+    command: python -u -m roboai.main
+    # command:  /bin/bash -c "while true; do sleep 30; done"
+    network_mode: host
+
 
