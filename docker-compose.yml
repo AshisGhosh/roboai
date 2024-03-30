@@ -61,5 +61,62 @@ services:
       - XAUTHORITY=/root/.Xauthority
     command: python -u -m robosim.robosim
     network_mode: host
+  robosim-server:
+    image: robo_ai-robosuite-simulation
+    build:
+      context: ./robosim
+      dockerfile: Dockerfile
+    volumes:
+      - ./robosim:/app
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - MUJOCO_GL=osmesa
+      - XAUTHORITY=/root/.Xauthority
+    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+    network_mode: host
+  autogen-roboai:
+    build:
+      context: ./autogen_roboai
+      dockerfile: Dockerfile
+    volumes:
+      - ./autogen_roboai:/app
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - MUJOCO_GL=osmesa
+      - XAUTHORITY=/root/.Xauthority
+    command: python -u -m autogen_roboai.test
+    # command:  /bin/bash -c "while true; do sleep 30; done"
+    network_mode: host
+  crewai-roboai:
+    build:
+      context: ./crewai_roboai
+      dockerfile: Dockerfile
+    volumes:
+      - ./crewai_roboai:/app
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - MUJOCO_GL=osmesa
+      - XAUTHORITY=/root/.Xauthority
+    command: python -u -m crewai_roboai.test
+    # command:  /bin/bash -c "while true; do sleep 30; done"
+    network_mode: host
+  
+  langroid-roboai:
+    build:
+      context: ./langroid_roboai
+      dockerfile: Dockerfile
+    volumes:
+      - ./langroid_roboai:/app
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+    environment:
+      - DISPLAY=${DISPLAY}
+      - MUJOCO_GL=osmesa
+      - XAUTHORITY=/root/.Xauthority
+    command: python -u -m langroid_roboai.test
+    # command:  /bin/bash -c "while true; do sleep 30; done"
+    network_mode: host
 
 
