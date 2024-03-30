@@ -3,12 +3,13 @@ from dataclasses import dataclass
 from enum import Enum
 import asyncio
 
+from PIL import Image
 
 import robosuite as suite
 from robosuite import load_controller_config
 
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 
 class ControllerType(Enum):
@@ -72,19 +73,34 @@ class Task:
         return f"Task: {self.name}\n    Function: {self.function}\n    Args: {self.args}\n    Kwargs: {self.kwargs}"
 
 
-class robosim:
+class RoboSim:
     def __init__(self, controller_type=ControllerType.OSC_POSE):
         self.controller_type = controller_type
-        self.env = self.setup_env()
+        self.env = None
 
+        self.task_factory = TaskFactory()
+        self.tasks = []
+        self.current_task = None
+        self.__goal_position = None
+
+        self.render_task = None
+        self.execute_async_task = None
+        self.__close_renderer_flag = asyncio.Event()
+        self.__executing_async = asyncio.Event()
+        self.__pause_execution = asyncio.Event()
+        self.__getting_image = asyncio.Event()
+        self.__getting_image_ts = None
+
+    
+    def setup(self):
+        self.env = self.setup_env()
+        self.register_tasks()
+    
+    def register_tasks(self):
         self.task_factory = TaskFactory()
         self.task_factory.register_task(self.go_to_position)
         self.task_factory.register_task(self.go_to_relative_position)
         self.task_factory.register_task(self.go_to_object)
-
-        self.tasks = []
-        self.current_task = None
-        self.__goal_position = None
     
     def setup_env(self):
         config = load_controller_config(default_controller=self.controller_type.name) # load default controller config
@@ -120,8 +136,81 @@ class robosim:
                 action = OSCControlStep(0, 0, 0, 0, 0, 0, 0).to_list()
             obs, reward, done, info = self.env.step(action)  # take action in the environment
             self.env.render()  # render on display
+    
+    async def start_async(self):
+        if self.render_task is None or self.render_task.done():
+            self.__close_renderer_flag.clear()
+            self.env.reset()
+            logging.debug("Now starting renderer...")
+            self.render_task = asyncio.create_task(self.render())
+        return True
+    
+    async def render(self):
+        hz = 5
+        while not self.__close_renderer_flag.is_set():  # Use the Event for checking
+            if not self.__executing_async.is_set():
+                self.env.render()
+            await asyncio.sleep(1/hz)
+    
+    async def close_renderer(self):
+        self.__close_renderer_flag.set()
+        if self.render_task and not self.render_task.done():
+            await self.render_task
+        self.env.close_renderer()
+        return True
+    
+    async def start_execution(self):
+        self.execute_async_task = asyncio.create_task(self.execute_async())
+        return True
+    
+    async def execute_async(self):
+        if not self.render_task or self.render_task.done():
+            await self.start_async()
+
+        self.__pause_execution.clear()
+        self.__executing_async.set()
+        while self.tasks or self.current_task:            
+            if self.__pause_execution.is_set():
+                await self.manage_execution_delay() 
+                continue
+
+            action = self.check_for_action()
+            if action is None:
+                action = OSCControlStep(0, 0, 0, 0, 0, 0, 0).to_list()
+            obs, reward, done, info = self.env.step(action)
+            if self.__getting_image.is_set():
+                continue
+            else:
+                self.env.render()
+            await self.manage_execution_delay()
         
-            
+        self.__executing_async.clear()
+        return "All tasks executed."
+    
+    async def manage_execution_delay(self):
+        delay = 0.0
+        if self.__getting_image.is_set():
+            delay = 0.1
+        else:
+            if self.__getting_image_ts is not None:
+                current_time = asyncio.get_event_loop().time()
+                if current_time - self.__getting_image_ts < 1:
+                    delay = 0.1
+                else:
+                    self.__getting_image_ts = None
+        await asyncio.sleep(delay)  
+    
+    async def pause_execution(self):
+        logging.info("Pausing execution...")
+        self.__pause_execution.set()
+        return True
+    
+    async def resume_execution(self):
+        logging.info("Resuming execution...")
+        self.__pause_execution.clear()
+        self.__executing_async.set()
+        return True
+    
     
     def check_for_action(self):
         '''
@@ -162,6 +251,9 @@ class robosim:
         task = self.task_factory.create_task(function, name, *args, **kwargs)
         self.tasks.append(task)
         logging.info(f"Task added: {task}")
+    
+    def get_tasks(self):
+        return self.tasks
     
     def go_to_position(self, position, frame="gripper"):
         if len(position) != 3:
@@ -204,11 +296,14 @@ class robosim:
 
     def simple_velocity_control(self, dist):
         euclidean_dist = np.linalg.norm(dist)
-        if euclidean_dist < 0.02:
+        if euclidean_dist < 0.03:
             return [0, 0, 0, 0, 0, 0, 0]
         cartesian_velocities = dist / euclidean_dist
         action = OSCControlStep(*cartesian_velocities, 0, 0, 0, 0)
         return action.to_list()
+    
+    def get_object_names(self):
+        return [obj.name for obj in self.env.objects]
 
     def get_object_pose(self):
         for obj in self.env.objects:
@@ -219,10 +314,18 @@ class robosim:
                     return_distance=True,
                 )
             logging.info(f"Object {obj.name}: {dist}")
-
+    
+    async def get_image(self):
+        self.__getting_image.set()
+        self.__getting_image_ts = asyncio.get_event_loop().time()
+        im = self.env.sim.render(width=512, height=512, camera_name="agentview")
+        img = Image.fromarray(im[::-1])
+        self.__getting_image.clear()
+        return img
 
 if __name__ == "__main__":
-    sim = robosim()
+    sim = RoboSim()
+    sim.setup()
     available_tasks = sim.task_factory.get_task_types()
     logging.info(f"Available Tasks: {available_tasks}")
     sim.add_task('Position Check', 'go_to_position', [-0.3, -0.3, 1])
