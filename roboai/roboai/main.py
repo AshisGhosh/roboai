@@ -4,6 +4,8 @@ from typing import Callable
 from roboai.agent import Agent
 from roboai.task import Task
 
+from roboai.utils.robosim_client import get_objects_on_table, pick, place
+
 import logging
 
 log = logging.getLogger("roboai")
@@ -78,15 +80,15 @@ class RobotJob:
         plan_task.register_tool(
             name="pick",
             func=pick,
-            description="Robot picks up the provided arg 'object'",
-            example='"pick_success = pick(object="Cheese")" --> Returns: True '
+            description="Robot picks up the provided arg 'object_name'",
+            example='"pick_success = pick(object_name="Cheese")" --> Returns: True '
         )
 
         plan_task.register_tool(
             name="place",
             func=place,
-            description="Robot places the provided arg 'object'",
-            example='"place_success = place(object="Cheese")" --> Returns: True '
+            description="Robot places the provided arg 'object_name'",
+            example='"place_success = place(object_name="Cheese")" --> Returns: True '
         )
 
         planner_agent = Agent(
@@ -101,18 +103,55 @@ class RobotJob:
 
         plan_task.add_solving_agent(planner_agent)
         log.info(plan_task)
-        plan_task.run()
+        output = plan_task.run()
 
-def get_objects_on_table():
-    return ["Cheese", "Beer", "Toy"]
+        # Validate the plan?
 
-def pick(object):
-    log.debug(f"Picked: {object} ")
-    return True
+        # Execute the plan
+        coder_task = Task(
+            f"""Return python code to execute the plan using only the provided functions.
+                {output}
+            """
+            )
+        coder_task.register_tool(
+            name="pick",
+            func=pick,
+            description="Robot picks up the provided arg 'object_name'",
+            example='"pick_success = pick(object_name="Cheese")" --> Returns: True '
+        )
+        coder_task.register_tool(
+            name="place",
+            func=place,
+            description="Robot places the provided arg 'object_name'",
+            example='"place_success = place(object_name="Cheese")" --> Returns: True '
+        )
+        coder_agent = Agent(
+            name="Coder",
+            model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
+            system_message="""
+            You are a coder that writes concise and exact code to execute the plan.
+            Use only the provided functions.
+            """ + coder_task.generate_tool_prompt()
+        )
+        coder_task.add_solving_agent(coder_agent)
+        log.info(coder_task)
+        output = coder_task.run()
 
-def place(object):
-    log.debug(f"Placed: {object}")
-    return True
+        code = extract_code(output)
+        exec_vars = coder_task.get_exec_vars()
+        exec(code, exec_vars)
+
+
+# def get_objects_on_table():
+#     return ["Cheese", "Beer", "Toy"]
+
+# def pick(object_name):
+#     log.debug(f"Picked: {object_name} ")
+#     return True
+
+# def place(object_name):
+#     log.debug(f"Placed: {object_name}")
+#     return True
 
 
 if __name__ == "__main__":
