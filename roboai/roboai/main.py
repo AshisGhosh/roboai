@@ -4,7 +4,7 @@ from typing import Callable
 from roboai.agent import Agent
 from roboai.task import Task
 
-from roboai.utils.robosim_client import get_objects_on_table, pick, place
+from shared.utils.robosim_client import get_objects_on_table, pick, place
 
 import logging
 

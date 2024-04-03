@@ -179,10 +179,10 @@ def output_pred(raw_pred, img, im_size_, visualize):
     for i, (sem_pred, bbx_pred, cls_pred, obj_pred) in enumerate(zip(
             raw_pred["sem_pred"], raw_pred["bbx_pred"], raw_pred["cls_pred"], raw_pred["obj_pred"])):
         sem_pred = np.asarray(sem_pred.detach().cpu().numpy(), dtype=np.uint8)
-        print(f"sem_pred: {sem_pred.shape}")
-        print(f"bbx_pred: {bbx_pred.shape}")
-        print(f"cls_pred: {cls_pred.shape}")
-        print(f"obj_pred: {obj_pred.shape}")
+        # print(f"sem_pred: {sem_pred.shape}")
+        # print(f"bbx_pred: {bbx_pred.shape}")
+        # print(f"cls_pred: {cls_pred.shape}")
+        # print(f"obj_pred: {obj_pred.shape}")
 
         seg_mask_vis = np.zeros((im_size_[0], im_size_[1], 3))
         cls_labels = np.unique(sem_pred)
@@ -202,7 +202,11 @@ def output_pred(raw_pred, img, im_size_, visualize):
             print(f"{cls_list[cls]} {sum(map(sum,mask_per_label))}")
             
             # mask_per_label = mask_per_label.astype(np.uint8) * 255
-        img_mask = (img * 0.25 + seg_mask_vis * 0.75)
+        try:
+            img_mask = (img * 0.25 + seg_mask_vis * 0.75)
+        except ValueError as e:
+            log_debug(f"Error: {e}")
+            img_mask = seg_mask_vis
         img_mask = img_mask.astype(np.uint8)*255
 
         for cls in cls_labels:
@@ -219,6 +223,10 @@ def output_pred(raw_pred, img, im_size_, visualize):
 
                 cnt = np.array([(int(bbx_pred_i[0]) + int(bbx_pred_i[2])) / 2,
                                         (int(bbx_pred_i[1]) + int(bbx_pred_i[3])) / 2])
+                
+                if (int(cnt[1]) >= im_size_[0]) or (int(cnt[0]) >= im_size_[1]):
+                    continue
+                
                 actual_class = sem_pred[int(cnt[1]), int(cnt[0])]
                 if actual_class != cls:
                     continue
@@ -280,7 +288,7 @@ def output_pred(raw_pred, img, im_size_, visualize):
             cv2.imshow(f"Image Mask", img_mask)
             cv2.waitKey(0)
             
-        return output
+        return output, img_mask
 
 
 class GraspServer:
@@ -294,19 +302,21 @@ class GraspServer:
         weights_path = "/app/data/weights/model_last.pth.tar"
         log_debug("Loading snapshot from %s", weights_path)
         snapshot = resume_from_snapshot(self.model, weights_path, ["body", "rpn_head", "roi_head", "sem_head"])
+        self.visualize = False
 
     def detect(self, img):
-        res = test(self.model, img, visualize=False)
+        res, img = test(self.model, img, visualize=self.visualize)
         # Convert to JSON serializable format
         res_dict = []
         for r in res:
             res_dict.append({
                 "cls": int(r["cls"]),
+                "cls_name": cls_list[int(r["cls"])],
                 "obj": r["obj"],
                 "bbox": r["bbox"].tolist(),
                 "r_bbox": r["r_bbox"].tolist()
             })
-        return res_dict
+        return res_dict, Image.fromarray(img)
     
     def detect_from_path(self, img_path):
         img_bgr = cv2.imread(img_path)
@@ -335,7 +345,8 @@ if __name__ == "__main__":
     print("Loading image...")
     # img_path = "/app/data/OCID_grasp/ARID20/table/top/seq12/rgb/result_2018-08-21-16-53-16.png"
     # img_path = "/app/data/OCID_grasp/ARID20/table/top/seq04/rgb/result_2018-08-21-12-13-01.png"
-    img_path="/app/data/OCID_grasp/ARID20/table/top/seq08/rgb/result_2018-08-21-14-44-31.png"
+    # img_path="/app/data/OCID_grasp/ARID20/table/top/seq08/rgb/result_2018-08-21-14-44-31.png"
+    img_path="/app/data/test.png"
     img_bgr = cv2.imread(img_path)
     img_rgb = cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB)
     # cv2.imshow("Image", img_rgb)

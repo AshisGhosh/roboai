@@ -9,7 +9,10 @@ import robosuite as suite
 from robosuite import load_controller_config
 
 import logging
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(level=logging.INFO)
+
+from robosim.task import TaskFactory, TaskClass
+from robosim.robot import Robot
 
 
 class ControllerType(Enum):
@@ -18,60 +21,17 @@ class ControllerType(Enum):
 
 @dataclass
 class OSCControlStep:
-    dx: float
-    dy: float
-    dz: float
-    droll: float
-    dpitch: float
-    dyaw: float
-    gripper: float
+    dx: float = 0
+    dy: float = 0
+    dz: float = 0
+    droll: float = 0
+    dpitch: float = 0
+    dyaw: float = 0
+    gripper: float = 0
 
     def to_list(self):
         return [self.dx, self.dy, self.dz, self.droll, self.dpitch, self.dyaw, self.gripper]
     
-class TaskFactory:
-    def __init__(self):
-        self._creators = {}
-
-    def register_task(self, creator):
-        self.register_task_type(
-            creator.__name__,
-            lambda name, *args, **kwargs: Task(name, creator, *args, **kwargs)
-        )
-
-    def register_task_type(self, task_type, creator):
-        self._creators[task_type] = creator
-
-    def create_task(self, task_type, task_name=None, *args, **kwargs):
-        creator = self._creators.get(task_type)
-        if not creator:
-            raise ValueError(f"Task type {task_type} not registered.")
-        if task_name is not None:
-            # Use the provided task_name or fallback to a default naming convention
-            return creator(task_name, *args, **kwargs)
-        else:
-            return creator(task_type, *args, **kwargs)
-    
-    def get_task_types(self):
-        return self._creators.keys()
-    
-
-class Task:
-    def __init__(self, name, function, *args, **kwargs):
-        self.name = name
-        self.function = function
-        self.args = args
-        self.kwargs = kwargs
-
-    def execute(self):
-        try:
-            return self.function(*self.args, **self.kwargs)
-        except Exception as e:
-            logging.error(f"Error executing task {self.name}: {e}")
-    
-    def __str__(self):
-        return f"Task: {self.name}\n    Function: {self.function}\n    Args: {self.args}\n    Kwargs: {self.kwargs}"
-
 
 class RoboSim:
     def __init__(self, controller_type=ControllerType.OSC_POSE):
@@ -81,7 +41,7 @@ class RoboSim:
         self.task_factory = TaskFactory()
         self.tasks = []
         self.current_task = None
-        self.__goal_position = None
+        # self.__goal_position = None
 
         self.render_task = None
         self.execute_async_task = None
@@ -94,13 +54,16 @@ class RoboSim:
     
     def setup(self):
         self.env = self.setup_env()
+        self.robot = Robot(self)
         self.register_tasks()
     
     def register_tasks(self):
         self.task_factory = TaskFactory()
-        self.task_factory.register_task(self.go_to_position)
-        self.task_factory.register_task(self.go_to_relative_position)
-        self.task_factory.register_task(self.go_to_object)
+        self.task_factory.register_task(self.robot.go_to_position)
+        self.task_factory.register_task(self.robot.go_to_relative_position)
+        self.task_factory.register_task(self.robot.go_to_pick_center)
+        self.task_factory.register_task(self.robot.go_to_object)
+        self.task_factory.register_task(self.robot.get_grasp, TaskClass.DATA_TASK)
     
     def setup_env(self):
         config = load_controller_config(default_controller=self.controller_type.name) # load default controller config
@@ -114,7 +77,7 @@ class RoboSim:
             control_freq=20,
             has_renderer=True,
             render_camera="frontview",
-            camera_names=["frontview", "agentview"],
+            camera_names=["frontview", "agentview", "robot0_eye_in_hand"],
             has_offscreen_renderer=True,
             use_object_obs=False,                  
             use_camera_obs=True,                       
@@ -133,7 +96,7 @@ class RoboSim:
         for i in range(1000):
             action = self.check_for_action()
             if action is None:
-                action = OSCControlStep(0, 0, 0, 0, 0, 0, 0).to_list()
+                action = OSCControlStep().to_list()
             obs, reward, done, info = self.env.step(action)  # take action in the environment
             self.env.render()  # render on display
     
@@ -174,9 +137,9 @@ class RoboSim:
                 await self.manage_execution_delay() 
                 continue
 
-            action = self.check_for_action()
+            action = await self.check_for_action()
             if action is None:
-                action = OSCControlStep(0, 0, 0, 0, 0, 0, 0).to_list()
+                action = OSCControlStep().to_list()
             obs, reward, done, info = self.env.step(action)
             if self.__getting_image.is_set():
                 continue
@@ -211,28 +174,31 @@ class RoboSim:
         self.__executing_async.set()
         return True
     
-    
-    def check_for_action(self):
+    async def check_for_action(self):
         '''
         Check if there is a task in the queue. If there is, execute it.
         '''
+        if self.current_task == None and self.tasks:
+            self.current_task = self.tasks.pop(0)
+            logging.info(f"Current Task: {self.current_task.name}")
+
         if self.current_task:
-            return self.do_current_task()
-        else:
-            if self.tasks:
-                self.current_task = self.tasks.pop(0)
-                logging.info(f"Current Task: {self.current_task.name}")
-                return self.do_current_task()
+            if self.current_task.task_class != TaskClass.CONTROL_TASK:
+                data = await self.current_task.execute()
+                logging.info(f"Data: {data}")
+                self.finish_current_task()
+                return OSCControlStep().to_list()
+            return await self.do_current_task()
         
         return None
     
-    def do_current_task(self):
+    async def do_current_task(self):
         '''
         Execute the current task in the queue.
         '''
         action = self.current_task.execute()
         logging.debug(f"Action: {action}")
-        if action == OSCControlStep(0, 0, 0, 0, 0, 0, 0).to_list():
+        if action == OSCControlStep().to_list():
             self.finish_current_task()
         return action
     
@@ -242,7 +208,7 @@ class RoboSim:
         '''
         logging.info(f"Task finished: {self.current_task.name}")
         self.current_task = None
-        self.__goal_position = None
+        self.robot.__goal_position = None
     
     def add_task(self, name, function, *args, **kwargs):
         '''
@@ -255,73 +221,16 @@ class RoboSim:
     def get_tasks(self):
         return self.tasks
     
-    def go_to_position(self, position, frame="gripper"):
-        if len(position) != 3:
-            raise ValueError("Position must be a 3D point.")
-        dist = self.distance_to_position(position)
-        return self.simple_velocity_control(dist)
-    
-    def go_to_relative_position(self, position, frame="gripper"):
-        if len(position) != 3:
-            raise ValueError("Position must be a 3D point.")
-        if frame != "gripper":
-            raise NotImplementedError("Only gripper frame is supported for now.")
-        
-        if self.__goal_position is None:
-            self.__goal_position = self.get_gripper_position() + np.array(position)
-        dist = self.distance_to_position(self.__goal_position)
-        return self.simple_velocity_control(dist)
-    
-    def get_gripper_position(self):
-        gripper=self.env.robots[0].gripper
-        gripper_pos = self.env.sim.data.get_site_xpos(gripper.important_sites["grip_site"])
-        return gripper_pos
-    
-    def distance_to_position(self, position):
-        logging.debug(f"Position: {position}")
-        gripper_pos = self.get_gripper_position()
-        logging.debug(f"Gripper Position: {gripper_pos}")
-        dist = position - gripper_pos
-        logging.debug(f"Distance: {dist}")
-        return dist
-
-    def go_to_object(self, target_obj_name="Can"):
-        obj = self.env.objects[self.env.object_to_id[target_obj_name.lower()]]
-        dist = self.env._gripper_to_target(
-                        gripper=self.env.robots[0].gripper,
-                        target=obj.root_body,
-                        target_type="body",
-                    )
-        return self.simple_velocity_control(dist)
-
-    def simple_velocity_control(self, dist):
-        euclidean_dist = np.linalg.norm(dist)
-        if euclidean_dist < 0.03:
-            return [0, 0, 0, 0, 0, 0, 0]
-        cartesian_velocities = dist / euclidean_dist
-        action = OSCControlStep(*cartesian_velocities, 0, 0, 0, 0)
-        return action.to_list()
-    
-    def get_object_names(self):
-        return [obj.name for obj in self.env.objects]
-
-    def get_object_pose(self):
-        for obj in self.env.objects:
-            dist = self.env._gripper_to_target(
-                    gripper=self.env.robots[0].gripper,
-                    target=obj.root_body,
-                    target_type="body",
-                    return_distance=True,
-                )
-            logging.info(f"Object {obj.name}: {dist}")
-    
-    async def get_image(self):
+    async def get_image(self, camera_name="agentview", width=512, height=512) -> Image:
         self.__getting_image.set()
         self.__getting_image_ts = asyncio.get_event_loop().time()
-        im = self.env.sim.render(width=512, height=512, camera_name="agentview")
+        im = self.env.sim.render(width=width, height=height, camera_name=camera_name)
         img = Image.fromarray(im[::-1])
         self.__getting_image.clear()
         return img
+    
+    async def get_grasp_image(self) -> Image:
+        return await self.get_image("robot0_eye_in_hand", width=640, height=480)
 
 if __name__ == "__main__":
     sim = RoboSim()

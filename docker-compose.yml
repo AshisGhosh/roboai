@@ -17,6 +17,7 @@ services:
     # command: /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
     profiles: ["dev"]
+
   robomimic-simulation:
     build:
       context: ./robomimic_sim
@@ -47,34 +48,39 @@ services:
     command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
     # command: /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
+
   robosim:
     image: robo_ai-robomimic-simulation
     build:
-      context: ./robosim
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: robosim/Dockerfile
     volumes:
       - ./robosim:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+      - ./shared:/app/shared
     environment:
       - DISPLAY=${DISPLAY}
       - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
     command: python -u -m robosim.robosim
     network_mode: host
+
   robosim-server:
     image: robo_ai-robosuite-simulation
     build:
-      context: ./robosim
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: robosim/Dockerfile
     volumes:
       - ./robosim:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+      - ./shared:/app/shared
     environment:
       - DISPLAY=${DISPLAY}
       - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
-    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     network_mode: host
+
   autogen-roboai:
     build:
       context: ./autogen_roboai
@@ -89,6 +95,7 @@ services:
     command: python -u -m autogen_roboai.test
     # command:  /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
+
   crewai-roboai:
     build:
       context: ./crewai_roboai
@@ -126,13 +133,13 @@ services:
     volumes:
       - ./roboai:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+      - ./shared:/app/shared
     environment:
       - DISPLAY=${DISPLAY}
       - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
     command: python -u -m roboai.main
     # command:  /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
   
   grasp-server:
     build:
@@ -141,11 +148,14 @@ services:
     volumes:
       - ./grasp_server:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+      - ./shared:/app/shared
     environment:
       - DISPLAY=${DISPLAY}
       - XAUTHORITY=/root/.Xauthority
-    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
+      # - QT_QPA_PLATFORM=xcb
+      # - QT_DEBUG_PLUGINS=1
+    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    # command: python -u -m grasp_server.grasp
     # command:  /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
-
 

@@ -56,6 +56,17 @@ async def test():
 async def start():
     return await robosim.start_async()
 
+@app.get("/get_grasp_image")
+async def get_grasp_image():
+    logging.info("Getting grasp image...")
+    img = await robosim.get_grasp_image()
+    logging.debug("Image received.")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    logging.debug("Image saved. Ready to stream.")
+    return StreamingResponse(buf, media_type="image/png")
+
 @app.get("/get_image")
 async def get_image():
     logging.info("Getting image...")

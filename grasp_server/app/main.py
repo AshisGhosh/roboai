@@ -1,10 +1,15 @@
 #!/usr/bin/python -u
 
 import io
+import base64
+from PIL import Image
+import numpy as np
+import cv2
 
 from fastapi import FastAPI, File, UploadFile, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
+from fastapi.responses import JSONResponse
 
 from grasp_server.grasp import GraspServer
 
@@ -41,13 +46,27 @@ async def read_root():
 @app.post("/detect")
 async def detect(file: UploadFile = File(...)):
     # Read the image file
-    image = await file.read()
+    image_bytes = await file.read()
+    nparr = np.frombuffer(image_bytes, np.uint8)
+    
+    # Decode the image
+    image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+
     # Perform object detection
-    result = grasp.detect(image)
+    result, img = grasp.detect(image)
     # Return the result
-    return result
+    return JSONResponse(content={"result": result, "image": get_image_response(img)})
 
 @app.post("/test")
 async def test():
-    result = grasp.test_detect()
-    return result
+    result, img = grasp.test_detect()
+    return JSONResponse(content={"result": result, "image": get_image_response(img)})
+
+def get_image_response(image):
+    buf = io.BytesIO()
+    image.save(buf, format="JPEG")
+    buf.seek(0)
+    base64_image = base64.b64encode(buf.getvalue()).decode("utf-8")
+    return base64_image
+    # return StreamingResponse(buf, media_type="image/jpeg")
+    

@@ -28,8 +28,6 @@ async def post_request(url: str, params: Optional[Dict[str, Any]] = None, data: 
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, params=params, json=data, files=files, headers=headers, timeout=timeout)
             response = response.json()
-            if not "success" in response.keys():
-                response["success"] = True
             log.debug(f"Response: {response}")
             return response
     except httpx.ReadTimeout as e:

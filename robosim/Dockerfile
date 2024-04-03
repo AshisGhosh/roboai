@@ -1,6 +1,8 @@
 # Use an official Miniconda3 base image
 FROM continuumio/miniconda3
 
+ARG PROJECT=robosim
+
 # Set the Python version
 ARG PYTHON_VERSION=3.10
 
@@ -15,7 +17,9 @@ RUN apt-get update && apt-get install -y \
     libc-dev \
     ffmpeg \
     libsm6 \
-    libxext6
+    libxext6 \
+    libgl1-mesa-glx \
+    libosmesa6
 
 # Update Conda and install pip in the base environment
 RUN conda update -n base -c defaults conda && \
@@ -32,19 +36,17 @@ RUN mkdir -p /root/.mujoco && \
 ENV MUJOCO_PY_MJPRO_PATH=/root/.mujoco/mujoco-${MUJOCO_VERSION}
 ENV LD_LIBRARY_PATH=/root/.mujoco/mujoco-${MUJOCO_VERSION}/bin:${LD_LIBRARY_PATH}
 
-# RUN echo ls
-# RUN cd /root/lib/x86_64-linux-gnu && sudo ln -s libglut.so.3.12 libglut.so.3
 
-RUN apt-get upgrade && apt-get install -y \
-    libgl1-mesa-glx \
-    libosmesa6
+# RUN apt-get update && apt-get install -y \
+#     libgl1-mesa-glx \
+#     libosmesa6
 
 # Install Robosuite
 RUN conda run -n robot_env pip install robosuite
 
 # Copy the entrypoint script into the image and make sure it's executable
 RUN mkdir -p /usr/local/bin
-COPY entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY ${PROJECT}/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Install Poetry
@@ -52,12 +54,15 @@ RUN conda run -n robot_env pip install poetry
 RUN conda run -n robot_env poetry config virtualenvs.create false
 
 # Copy only the pyproject.toml and poetry.lock* to install dependencies
-COPY pyproject.toml poetry.lock* /app/
+COPY ${PROJECT}/pyproject.toml ${PROJECT}/poetry.lock* /app/
 
 WORKDIR /app
 
 # Install dependencies
 RUN conda run -n robot_env poetry install --no-dev
+
+COPY shared/pyproject.toml shared/poetry.lock* /app/shared/
+RUN cd /app/shared && conda run -n robot_env poetry install --no-dev
 
 
 # Use the entrypoint script to activate the Conda environment
