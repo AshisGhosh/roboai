@@ -48,7 +48,13 @@ async def startup_event():
 
 @app.post("/test")
 async def test():
-    await add_task(Task(name="test_get_can", type="go_to_object", args="Can"))
+    await add_task(Task(name="go to pick", type="go_to_pick_center", args=""))
+    await add_task(Task(name="get grasp", type="get_grasp", args=""))
+    await add_task(Task(name="add grasp marker", type="add_grasp_marker", args=""))
+    # await add_task(Task(name="go to grasp ori", type="go_to_grasp_orientation", args=""))
+    await add_task(Task(name="go to pre grasp", type="go_to_pre_grasp", args=""))
+    await add_task(Task(name="go to grasp pos", type="go_to_grasp_position", args=""))
+    # await add_task(Task(name="orient", type="go_to_orientation", args=[2.95, 0.005, 1.57]))
     await robosim.start_execution()
     return {"msg": "Test task added and execution started."}
 
@@ -56,11 +62,26 @@ async def test():
 async def start():
     return await robosim.start_async()
 
+@app.post("/add_marker")
+async def add_marker(position: list[float]):
+    return robosim.add_marker(position)
+
 @app.get("/get_grasp_image")
 async def get_grasp_image():
     logging.info("Getting grasp image...")
-    img = await robosim.get_grasp_image()
+    img = await robosim.robot.grasp.get_grasp_image()
     logging.debug("Image received.")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    logging.debug("Image saved. Ready to stream.")
+    return StreamingResponse(buf, media_type="image/png")
+
+@app.get("/get_grasp_image_and_depth")
+async def get_grasp_image_and_depth():
+    logging.info("Getting grasp image and depth...")
+    img, depth = await robosim.robot.grasp.get_grasp_image_and_depth()
+    logging.debug("Image and depth received.")
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     buf.seek(0)

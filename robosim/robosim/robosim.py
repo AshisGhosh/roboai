@@ -7,9 +7,11 @@ from PIL import Image
 
 import robosuite as suite
 from robosuite import load_controller_config
+from robosuite.wrappers import VisualizationWrapper
+# from robosuite.wrappers.visualization_wrapper import DEFAULT_INDICATOR_SITE_CONFIG
 
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 from robosim.task import TaskFactory, TaskClass
 from robosim.robot import Robot
@@ -30,8 +32,22 @@ class OSCControlStep:
     gripper: float = 0
 
     def to_list(self):
-        return [self.dx, self.dy, self.dz, self.droll, self.dpitch, self.dyaw, self.gripper]
-    
+        return [self.dx, self.dy, self.dz, self.droll, self.dpitch, self.dyaw, self.gripper] 
+
+
+def test_vis_wrapper(env):
+    indicator_config = {
+        "name": "indicator_ball",
+        "type": "sphere",
+        "size": 0.3,
+        "rgba": [1, 0, 0, 0.65],
+        "pos": [0.5, 0.5, 0.5]
+    }
+    vis_wrap = VisualizationWrapper(env, [indicator_config])
+    vis_wrap.set_indicator_pos("indicator_ball", [0.5, 0, 1.0])
+    logging.info(env.sim.model.body_pos[env.sim.model.body_name2id("indicator_ball" + "_body")])
+    vis_wrap.sim.forward()
+    return vis_wrap
 
 class RoboSim:
     def __init__(self, controller_type=ControllerType.OSC_POSE):
@@ -56,14 +72,22 @@ class RoboSim:
         self.env = self.setup_env()
         self.robot = Robot(self)
         self.register_tasks()
+        # test_markers(self.env)
+        self.env = test_vis_wrapper(self.env)
     
     def register_tasks(self):
         self.task_factory = TaskFactory()
         self.task_factory.register_task(self.robot.go_to_position)
         self.task_factory.register_task(self.robot.go_to_relative_position)
+        self.task_factory.register_task(self.robot.go_to_orientation)
         self.task_factory.register_task(self.robot.go_to_pick_center)
         self.task_factory.register_task(self.robot.go_to_object)
         self.task_factory.register_task(self.robot.get_grasp, TaskClass.DATA_TASK)
+        self.task_factory.register_task(self.robot.go_to_grasp_orientation)
+        self.task_factory.register_task(self.robot.go_to_grasp_position)
+        self.task_factory.register_task(self.robot.go_to_pose)
+        self.task_factory.register_task(self.robot.go_to_pre_grasp)
+        self.task_factory.register_task(self.add_grasp_marker, TaskClass.DATA_TASK)
     
     def setup_env(self):
         config = load_controller_config(default_controller=self.controller_type.name) # load default controller config
@@ -78,6 +102,9 @@ class RoboSim:
             has_renderer=True,
             render_camera="frontview",
             camera_names=["frontview", "agentview", "robot0_eye_in_hand"],
+            camera_heights=[512, 512, 480],
+            camera_widths=[512, 512, 640],
+            camera_depths=[False, False, True],  # set to true for using depth sensor
             has_offscreen_renderer=True,
             use_object_obs=False,                  
             use_camera_obs=True,                       
@@ -86,6 +113,22 @@ class RoboSim:
         # reset the environment
         env.reset()
         return env
+
+    def add_marker(self, pos, size = 0.03, label = "indicator_ball"):
+        indicator_config = {
+            "name": label,
+            "type": "sphere",
+            "size": size,
+            "rgba": [1, 0, 0, 0.65],
+            "pos": pos
+        }
+        vis_wrap = VisualizationWrapper(self.env, [indicator_config])
+    
+    async def add_grasp_marker(self, *args):
+        grasp_pos = self.robot.get_grasp_pose()[0]
+        self.add_marker(grasp_pos, label="grasp_marker")
+        self.env.render()
+        return f"Marker added at {grasp_pos}."
 
     def start(self):
         logging.info("Starting Robosuite Simulation...")
@@ -228,9 +271,6 @@ class RoboSim:
         img = Image.fromarray(im[::-1])
         self.__getting_image.clear()
         return img
-    
-    async def get_grasp_image(self) -> Image:
-        return await self.get_image("robot0_eye_in_hand", width=640, height=480)
 
 if __name__ == "__main__":
     sim = RoboSim()

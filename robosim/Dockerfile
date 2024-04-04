@@ -19,7 +19,7 @@ RUN apt-get update && apt-get install -y \
     libsm6 \
     libxext6 \
     libgl1-mesa-glx \
-    libosmesa6
+    libosmesa6 
 
 # Update Conda and install pip in the base environment
 RUN conda update -n base -c defaults conda && \
