@@ -1,4 +1,3 @@
-import litellm
 from litellm import completion
 
 import logging

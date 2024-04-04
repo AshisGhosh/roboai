@@ -1,7 +1,6 @@
 from pydantic import BaseModel
 from typing import Callable
 
-import litellm
 from litellm import completion
 
 import logging
