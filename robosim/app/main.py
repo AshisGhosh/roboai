@@ -48,23 +48,58 @@ async def startup_event():
 
 @app.post("/test")
 async def test():
+    robosim.clear_tasks()
+
     await add_task(Task(name="go to pick", type="go_to_pick_center", args=""))
     await add_task(Task(name="get grasp", type="get_grasp", args=""))
-    await add_task(Task(name="add grasp marker", type="add_grasp_marker", args=""))
-    # await add_task(Task(name="go to grasp ori", type="go_to_grasp_orientation", args=""))
     await add_task(Task(name="go to pre grasp", type="go_to_pre_grasp", args=""))
+    await add_task(Task(name="open gripper", type="open_gripper", args=""))
     await add_task(Task(name="go to grasp pos", type="go_to_grasp_position", args=""))
-    # await add_task(Task(name="orient", type="go_to_orientation", args=[2.95, 0.005, 1.57]))
+    await add_task(Task(name="close gripper", type="close_gripper", args=""))
+    await add_task(Task(name="go to pre grasp", type="go_to_pre_grasp", args=""))
+
     await robosim.start_execution()
     return {"msg": "Test task added and execution started."}
+
+@app.get("/move_gripper_goal_to_gripper")
+async def move_gripper_goal_to_gripper():
+    return robosim.move_gripper_goal_to_gripper()
+
+@app.get("/get_gripper_orientation")
+async def get_gripper_orientation():
+    return str(robosim.robot.get_gripper_orientation_as_euler())
+
+@app.get("/get_gripper_orientation_in_world")
+async def get_gripper_orientation_in_world():
+    return str(robosim.robot.get_gripper_orientation_in_world_as_euler())
+
+@app.post("/move_orientation")
+async def move_orientation(orientation: list[float]):
+    await add_task(Task(name="move orientation", type="go_to_orientation", args=orientation))
+    await robosim.start_execution()
+    return {"msg": "Orientation move task added and execution started."}
+
+@app.post("/move_position")
+async def move_position(position: list[float]):
+    await add_task(Task(name="move position", type="go_to_position", args=position))
+    await robosim.start_execution()
+    return {"msg": "Position move task added and execution started."}
 
 @app.post("/start")
 async def start():
     return await robosim.start_async()
 
+@app.post("/pixel_to_marker")
+async def pixel_to_marker(pixel: list[int]):
+    return robosim.pixel_to_marker(pixel)
+
 @app.post("/add_marker")
 async def add_marker(position: list[float]):
     return robosim.add_marker(position)
+
+@app.post("/move_marker")
+async def move_marker(name:str, position: list[float] |None, orientation: list[float] |None):
+    return robosim.move_marker(name=name, position=position, orientation=orientation)
 
 @app.get("/get_grasp_image")
 async def get_grasp_image():
@@ -128,7 +163,6 @@ async def add_task(task: Task):
 async def get_tasks():
     tasks = [Task(name=t.name, type=t.function.__name__, args=t.args) for t in robosim.get_tasks()]
     return tasks
-
 
 @app.get("/get_objects")
 async def get_objects():
