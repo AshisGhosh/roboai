@@ -57,6 +57,8 @@ async def test():
     await add_task(Task(name="go to grasp pos", type="go_to_grasp_position", args=""))
     await add_task(Task(name="close gripper", type="close_gripper", args=""))
     await add_task(Task(name="go to pre grasp", type="go_to_pre_grasp", args=""))
+    await add_task(Task(name="go to drop", type="go_to_drop", args=""))
+    await add_task(Task(name="open gripper", type="open_gripper", args=""))
 
     await robosim.start_execution()
     return {"msg": "Test task added and execution started."}

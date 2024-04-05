@@ -128,6 +128,7 @@ class RoboSim:
         self.task_factory.register_task(self.add_grasp_marker, TaskClass.DATA_TASK)
         self.task_factory.register_task(self.robot.close_gripper)
         self.task_factory.register_task(self.robot.open_gripper)
+        self.task_factory.register_task(self.robot.go_to_drop)
     
     def setup_env(self):
         config = load_controller_config(default_controller=self.controller_type.name) # load default controller config

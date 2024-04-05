@@ -48,12 +48,13 @@ class Robot:
             self.__goal_position = self.get_gripper_position() + np.array(position)
         self.robosim.move_marker(name="gripper_goal", position=self.__goal_position, orientation=mat2quat(self.get_gripper_orientation_in_world()))
         dist = self.distance_to_position(self.__goal_position)
-        # log.debug(f"Distance: {dist}")
         return self.simple_velocity_control(dist)
     
     def go_to_pick_center(self, *args):
-        # return self.go_to_position(position=[-0.02, -0.27, 1.05])
-        return self.go_to_pose(pose=[-0.02, -0.27, 1.05, -3.0, 0.005, -1.57])
+        return self.go_to_pose(pose=[-0.02, -0.27, 1.05, -3.13, 0.005, -1.57])
+    
+    def go_to_drop(self, *args):
+        return self.go_to_pose(pose=[ 0.1, -0.57, 1.1, -3.13, 0.005, -1.57])
     
     def go_to_orientation(self, orientation, roll_only=False):
         if len(orientation) != 3:
@@ -97,12 +98,6 @@ class Robot:
         self.robosim.move_marker(grasp_sequence[1][0])
         return grasp
 
-    async def do_grasp(self, *args):
-        pos, ori = await self.grasp.get_grasp()
-        # convert to gripper orientation
-        desired_gripper_ori = [0, 0, ori]
-        pass
-
     def get_grasp_sequence(self):
         return self.__grasp_sequence
     
@@ -122,8 +117,6 @@ class Robot:
         return self.go_to_position(grasp_position)
     
     def go_to_pre_grasp(self, *args):
-        # gripper_pos = self.get_gripper_position()
-        # eef_pos = self.env.sim.data.site_xpos[self.env.robots[0].eef_site_id]
         grasp_pose = self.__grasp_sequence[1]
         pre_grasp_pos = [grasp_pose[0][0], grasp_pose[0][1], 1.05]
         pre_grasp_ori = [-3.0, 0.005, grasp_pose[1]]
@@ -136,8 +129,6 @@ class Robot:
     
     def get_gripper_orientation_in_world(self):
         gripper_ori = self.robosim.env._eef_xmat
-        # log.debug(f"Gripper Orientation [mat]: {gripper_ori}")
-        # gripper_ori = mat2euler(gripper_ori)
         return gripper_ori
     
     def get_gripper_orientation_in_world_as_euler(self):
