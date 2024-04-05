@@ -255,6 +255,11 @@ def output_pred(raw_pred, img, im_size_, visualize):
                     # if (int(cnt[1]) >= im_size_[0]) or (int(cnt[0]) >= im_size_[1]):
                     #     continue
 
+                    # filter out gripper - any result with the center in the bottom 100 pixels
+                    # TODO: find a better solution
+                    if cnt[1] > im_size_[0] - 100:
+                        continue
+
                     # if sem_pred[int(cnt[1]), int(cnt[0])] == cls:
 
                     # print(f"Seg class: {cls_list[sem_pred[int(cnt[1]), int(cnt[0])]]}")
