@@ -25,9 +25,8 @@ class Robot:
     def go_to_position(self, position):
         if self.__goal_position is None:
             self.__goal_position = position
-
-        marker_orientation = self.__goal_orientation if self.__goal_orientation is not None else self.get_gripper_orientation_in_world_as_euler()
-        self.robosim.move_marker(name="gripper_goal", position=self.__goal_position, orientation=marker_orientation)
+            marker_orientation = self.__goal_orientation if self.__goal_orientation is not None else self.get_gripper_orientation_in_world_as_euler()
+            self.robosim.move_marker(name="gripper_goal", position=self.__goal_position, orientation=marker_orientation)
 
         if len(position) != 3:
             raise ValueError("Position must be a 3D point.")
@@ -51,10 +50,10 @@ class Robot:
         return self.simple_velocity_control(dist)
     
     def go_to_pick_center(self, *args):
-        return self.go_to_pose(pose=[-0.02, -0.27, 1.05, -3.13, 0.005, -1.57])
+        return self.go_to_pose(pose=[-0.02, -0.27, 1.05, 0, 0, 0])
     
     def go_to_drop(self, *args):
-        return self.go_to_pose(pose=[ 0.1, -0.57, 1.1, -3.13, 0.005, -1.57])
+        return self.go_to_pose(pose=[ 0.1, -0.57, 1.1, 0, 0, 0])
     
     def go_to_orientation(self, orientation, roll_only=False):
         if len(orientation) != 3:
@@ -106,8 +105,7 @@ class Robot:
 
     def go_to_grasp_orientation(self, *args):
         grasp_pose = self.__grasp_sequence[1]
-        current_ori = self.get_gripper_orientation_as_euler()
-        grasp_ori = [current_ori[0], current_ori[1], grasp_pose[1] - np.pi/2]
+        grasp_ori = [0,0, grasp_pose[1] - np.pi/2]
         return self.go_to_orientation(grasp_ori)
     
     def go_to_grasp_position(self, *args):
@@ -119,7 +117,7 @@ class Robot:
     def go_to_pre_grasp(self, *args):
         grasp_pose = self.__grasp_sequence[1]
         pre_grasp_pos = [grasp_pose[0][0], grasp_pose[0][1], 1.05]
-        pre_grasp_ori = [-3.0, 0.005, grasp_pose[1]]
+        pre_grasp_ori = [0, 0, grasp_pose[1]]
         return self.go_to_pose([*pre_grasp_pos, *pre_grasp_ori])
 
     def get_gripper_position(self):
@@ -155,12 +153,21 @@ class Robot:
         return dist
     
     def delta_to_orientation(self, orientation):
-    
-        axis = "rxyz"
-        gripper_ori_world_mat = self.get_gripper_orientation_in_world()
-        gripper_ori_world_euler = mat2euler(gripper_ori_world_mat, axes=axis)
+        gripper_calibration_euler = [ 3.13,  0.14, -1.56 ]
+        gripper_calibration = euler2mat(gripper_calibration_euler)
+        gripper_calibration_quat = mat2quat(gripper_calibration)
         
-        # distances flip from -pi to pi, so we need to correct that
+        log.debug("-----")
+        log.debug(f"    request:    {orientation}")
+        goal_mat = euler2mat(orientation)
+        # log.debug(f"    Goal Orientation [mat]: {goal_mat}")
+        goal_in_world_mat = np.dot(gripper_calibration, goal_mat)
+        goal_in_world_euler = mat2euler(goal_in_world_mat, axes="rxyz")
+        goal_in_world_quat = mat2quat(goal_in_world_mat)
+        current_gripper_ori_mat = self.robosim.env._eef_xmat
+        current_ori = mat2euler(current_gripper_ori_mat, axes="rxyz")
+        current_ori_quat = mat2quat(current_gripper_ori_mat)
+        
         def get_closest_distance(a, b):
             dist = np.remainder(a - b, 2*np.pi)
             if dist > np.pi:
@@ -168,53 +175,28 @@ class Robot:
             elif dist < -np.pi:
                 dist += 2*np.pi            
             return dist
-
-        # Calculate the rotation matrix for the desired yaw change
-        # goal_change_euler = [0, 0, desired_yaw_change]
-        log.debug(f"-----")
-        log.debug(f"    Goal Orientation: {orientation}")
-
-        gripper_ori_gripper_mat = np.transpose(gripper_ori_world_mat)
-        gripper_ori_gripper_euler = mat2euler(gripper_ori_gripper_mat, axes=axis)
-        goal_change_in_gripper_euler = np.array([get_closest_distance(a, b) for a, b in zip(orientation, gripper_ori_gripper_euler)])
-        # log.debug(f"    Goal in gripper:")
-        # log.debug(f"        Gripper in gripper [euler]:     {gripper_ori_gripper_euler}")
-        # log.debug(f"        Goal in gripper [euler]:        {orientation}")
-        # log.debug(f"        dist:                           {goal_change_in_gripper_euler}")
-
-        goal_change_in_gripper_mat = euler2mat(goal_change_in_gripper_euler)
-        goal_in_world_mat = np.dot(gripper_ori_world_mat, goal_change_in_gripper_mat)
-
-        if self.__goal_orientation is None:
-            goal_in_world_euler = mat2euler(goal_in_world_mat, axes=axis)
-        else:
-            goal_in_world_euler = self.__goal_orientation 
-
-        goal_change_in_world_euler = np.array([get_closest_distance(a, b) for a, b in zip(goal_in_world_euler, gripper_ori_world_euler)])
-        log.debug(f"    Goal in world:")        
-        log.debug(f"        Gripper in world [euler]:       {gripper_ori_world_euler}")
-        log.debug(f"        Goal in world [euler]:          {goal_in_world_euler}")
-        log.debug(f"        dist:                           {goal_change_in_world_euler}")
-
-
-        direct_change_in_world_euler = np.array([get_closest_distance(a, b) for a, b in zip(orientation, gripper_ori_world_euler)])
-        # log.debug(f"    Direct goal in world:")
-        # log.debug(f"        Gripper in world [euler]:       {gripper_ori_world_euler}")
-        # log.debug(f"        Goal in world [euler]:          {orientation}")
-        # log.debug(f"        dist:                           {direct_change_in_world_euler}")
-
-        marker_orientation = goal_in_world_euler
-        if self.__goal_orientation is None:
-            self.__goal_orientation = goal_in_world_euler
-        marker_position = self.__goal_position if self.__goal_position is not None else self.get_gripper_position()
-        self.robosim.move_marker(name="gripper_goal", orientation=marker_orientation, position=marker_position)
-
-        dist = goal_change_in_world_euler
+        
+        actual_dist =np.array([get_closest_distance(a,b) for a, b in zip(goal_in_world_euler, current_ori)])
+        
+        dist = actual_dist
         dist[1] *= -1
         dist[2] *= -1
-        log.debug(f"    Distance (orientation): {dist}")
-        log.debug(f"------")
+
+        if self.__goal_orientation is None:
+            self.__goal_orientation = goal_in_world_euler
+            marker_position = self.__goal_position if self.__goal_position is not None else self.get_gripper_position()
+            self.robosim.move_marker(name="gripper_goal", orientation=goal_in_world_euler, position=marker_position)
+
+        log.debug(f"    Gripper Calibration: {gripper_calibration_euler}")
+        log.debug(f"    Goal in world: {goal_in_world_euler}")
+        log.debug(f"    Current in world: {current_ori}")
+        log.debug(" ")
+        log.debug(f"    Gripper Calibration [quat]:   {gripper_calibration_quat}")
+        log.debug(f"    Goal in world [quat]:         {goal_in_world_quat}")
+        log.debug(f"    Current in world [quat]:      {current_ori_quat}")
+
         return dist
+        
 
     def go_to_object(self, target_obj_name="Can"):
         obj = self.env.objects[self.env.object_to_id[target_obj_name.lower()]]
@@ -227,7 +209,7 @@ class Robot:
 
     def simple_velocity_control(self, dist):
         euclidean_dist = np.linalg.norm(dist)
-        if euclidean_dist < 0.03:
+        if euclidean_dist < 0.01:
             return [0, 0, 0, 0, 0, 0, 0]
         cartesian_velocities = dist / euclidean_dist
         log.debug(f"    Cartesian Velocities: {cartesian_velocities}")
@@ -245,8 +227,8 @@ class Robot:
             max_vel = 0.1
         if euclidean_dist < 0.2:
             max_vel = 0.05
-        if euclidean_dist < 0.05:
-            max_vel = 0.02
+        # if euclidean_dist < 0.05:
+        #     max_vel = 0.02
         cartesian_velocities = orientation / euclidean_dist
         cartesian_velocities = np.clip(cartesian_velocities, -max_vel, max_vel)
         for i in range(3):

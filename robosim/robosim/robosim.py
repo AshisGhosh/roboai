@@ -112,6 +112,7 @@ class RoboSim:
         # test_markers(self.env)
         # self.env = test_vis_wrapper(self.env)
         self.setup_markers()
+        # self.test_action([0,0,0,0,0,0,0,0])
     
     def register_tasks(self):
         self.task_factory = TaskFactory()
@@ -161,6 +162,9 @@ class RoboSim:
         # self.add_marker([0.5, 0, 1.0], size=0.3, name="indicator_ball")
         self.add_marker([0.5, 0, 2.0], size=0.05, name="grasp_marker")
         self.add_marker([0.5, 0, 1.0], type="box", size=(0.03, 0.05, 0.1), name="gripper_goal")
+
+    def test_action(self, action, *args):
+        obs, reward, done, info = self.env.step(action)
 
     def add_marker(self, pos, type = "sphere", size = 0.03, name = "indicator_ball"):
         indicator_config = {
