@@ -11,7 +11,7 @@ import logging
 logging.basicConfig(level=logging.WARN)
 
 log = logging.getLogger("robosim robot")
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 class Robot:
     def __init__(self, robosim):
@@ -91,8 +91,9 @@ class Robot:
         log.debug(f"ACTION: {action}")
         return action
         
-    async def get_grasp(self, *args):
-        grasp, grasp_sequence = await self.grasp.get_grasp()
+    async def get_grasp(self, object_name="Cereal", *args):
+        log.debug(f"Getting grasp for object: {object_name}")
+        grasp, grasp_sequence = await self.grasp.get_grasp(obj_name=object_name)
         self.__grasp_sequence = grasp_sequence
         self.robosim.move_marker(grasp_sequence[1][0])
         return grasp
@@ -236,21 +237,7 @@ class Robot:
                 cartesian_velocities[i] = 0
         action =[0, 0, 0, *cartesian_velocities, 0]
         log.debug(f"RPY Action: {action} (euclidean_dist: {euclidean_dist})")
-        return action
-    
-    def get_object_names(self):
-        return [obj.name for obj in self.env.objects]
-
-    def get_object_pose(self):
-        for obj in self.env.objects:
-            dist = self.env._gripper_to_target(
-                    gripper=self.env.robots[0].gripper,
-                    target=obj.root_body,
-                    target_type="body",
-                    return_distance=True,
-                )
-            log.info(f"Object {obj.name}: {dist}")
-        
+        return action        
     
     def close_gripper(self, *args):
         # get current gripper position

@@ -9,7 +9,7 @@ from shared.utils.robosim_client import get_objects_on_table, pick, place
 import logging
 
 log = logging.getLogger("roboai")
-log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
 
 class Tool(BaseModel):
     name: str
@@ -18,11 +18,20 @@ class Tool(BaseModel):
     example: str
 
 def extract_code(raw_input, language="python"):
-    start_delimiter = f"```{language}\n" 
+    start_delimiter = f"```{language}\n"
+    if start_delimiter not in raw_input:
+        start_delimiter = "```"
+
+    code_start_index = raw_input.find(start_delimiter)
+    if code_start_index == -1:
+        code_start_index = 0
+    else:
+        code_start_index += len(start_delimiter)
+
     end_delimiter = "\n```"
-    code_start_index = raw_input.find(start_delimiter) + len(start_delimiter)
     code_end_index = raw_input.find(end_delimiter, code_start_index)
     code = raw_input[code_start_index:code_end_index].strip()
+    log.debug(f"Extracted code: \n{code}")
     return code
 
 
@@ -42,13 +51,13 @@ class RobotJob:
             name='get_objects_on_table',
             func=get_objects_on_table,
             description='Returns a list of the objects on the table.',
-            example='"objects_on_table = get_objects_on_table()" --> Returns: ["Object 1", "Object 2", "Object 3"]'
+            example='"objects_on_table = get_objects_on_table()" --> Returns: ["Object 1", "Object 2", "Object 3"]',
         )
         analyzer_agent = Agent(
             name="Analyzer",
             model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
             system_message="""
-            You are a helpful agent that concisely responds with just code.
+            You are a helpful agent that concisely responds with only code.
             Use only the provided functions.
             """ + task.generate_tool_prompt()
         )
@@ -140,18 +149,6 @@ class RobotJob:
         code = extract_code(output)
         exec_vars = coder_task.get_exec_vars()
         exec(code, exec_vars)
-
-
-# def get_objects_on_table():
-#     return ["Cheese", "Beer", "Toy"]
-
-# def pick(object_name):
-#     log.debug(f"Picked: {object_name} ")
-#     return True
-
-# def place(object_name):
-#     log.debug(f"Placed: {object_name}")
-#     return True
 
 
 if __name__ == "__main__":

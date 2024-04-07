@@ -12,7 +12,7 @@ import shared.utils.llm_utils as llm_utils
 
 import logging
 log = logging.getLogger("robosim robot grasp")
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 class Camera:
     def __init__(self, env, name, camera_height=480, camera_width=640):
@@ -136,12 +136,13 @@ class GraspHandler:
 
         return img, depth
 
-    async def get_grasp(self):
+    async def get_grasp(self, obj_name):
         # return await self.get_grasps()
+        log.debug("Getting grasp image and depth...")
         img, depth = await self.get_grasp_image_and_depth()
+        log.debug("Getting grasp from image...")
         grasps = await self.get_grasp_from_image(img)
 
-        obj_name = "cereal"
         candidate_objs = [obj["cls_name"].replace("_", " ") for obj in grasps]
         log.info(f"Getting closest object to {obj_name} from {candidate_objs}")
         closest_obj = llm_utils.get_closest_text(obj_name, candidate_objs)

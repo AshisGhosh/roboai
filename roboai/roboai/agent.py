@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 load_dotenv()  # take environment variables from .env.
 
 log = logging.getLogger("roboai")
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 class Agent:
     def __init__(self, name, model, system_message=""):

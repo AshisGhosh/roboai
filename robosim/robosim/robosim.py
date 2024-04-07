@@ -12,7 +12,8 @@ from robosuite.wrappers import VisualizationWrapper
 from robosuite.utils.transform_utils import mat2quat, euler2mat
 
 import logging
-logging.basicConfig(level=logging.DEBUG)
+log = logging.getLogger("robosim")
+log.setLevel(logging.INFO)
 
 from robosim.task import TaskFactory, TaskClass
 from robosim.robot import Robot
@@ -35,56 +36,6 @@ class OSCControlStep:
     def to_list(self):
         return [self.dx, self.dy, self.dz, self.droll, self.dpitch, self.dyaw, self.gripper] 
 
-
-def test_vis_wrapper(env):
-    indicator_config = {
-        "name": "indicator_ball",
-        "type": "sphere",
-        "size": 0.3,
-        "rgba": [1, 0, 0, 0.65],
-        "pos": [0.5, 0.5, 0.5]
-    }
-    vis_wrap = VisualizationWrapper(env, [indicator_config])
-    # vis_wrap.set_indicator_pos("indicator_ball", [0.5, 0, 1.0])
-    logging.info(env.sim.model.body_pos[env.sim.model.body_name2id("indicator_ball" + "_body")])
-    idx = env.sim.model.body_name2id("indicator_ball" + "_body")
-    logging.info(f"indicator_ball_body id: {idx}")
-    site_idx = env.sim.model.site_name2id("indicator_ball")
-    logging.info(f"indicator_ball_site id: {site_idx}")
-    # site_pos = env.sim.data.site_xpos[site_idx]
-    # logging.info(site_pos)
-    # env.sim.data.site_xpos[site_idx] = [0.5, 0, 1.0]
-    # logging.info(env.sim.data.site_xpos[site_idx])
-    
-
-    # marker_xml = f'<site name="target_site" pos="0 0 1" size="0.05" type="sphere" rgba="1 0 0 1"/>'
-    logging.info(type(env.model))
-    logging.info(type(env.sim))
-    logging.info(type(env.sim.model))
-    logging.info(type(env.sim.data))
-    logging.info(type(env.viewer))
-    logging.info(dir(env.sim.model))
-    logging.info(env.sim.model.site("indicator_ball"))
-    logging.info(dir(env.sim.data))
-    logging.info(env.sim.data.body("indicator_ball_body"))
-    logging.info(env.sim.data.site("indicator_ball"))
-    env.sim.model.body_pos[env.sim.model.body_name2id("indicator_ball" + "_body")] = [0.5, 0, 1.0]
-    # env.sim.data.body_xpos[env.sim.model.body_name2id("indicator_ball" + "_body")] = [0.5, 0, 1.0]
-    # env.sim.model.site("indicator_ball").pos = [0.5, 0, 1.0]
-    # logging.info(env.sim.model.site("indicator_ball"))
-    # logging.info(env.sim.model.body("indicator_ball_body"))
-    # env.sim.model.body("indicator_ball_body").ipos = [0.5, 0, 1.0]
-    # logging.info(env.sim.model.body("indicator_ball_body"))
-    
-    env.sim.forward()
-    env.sim.step()
-    logging.info(env.sim.model.body_pos[env.sim.model.body_name2id("indicator_ball" + "_body")])
-    logging.info(env.sim.data.body_xpos[env.sim.model.body_name2id("indicator_ball" + "_body")])
-    logging.info(env.sim.data.site_xpos[env.sim.model.site_name2id("indicator_ball")])
-    im = env.sim.render(width=512, height=512, camera_name="frontview")
-    # cv2.imshow("Test", im[::-1])
-    # cv2.waitKey(0)
-    return env
 
 class RoboSim:
     def __init__(self, controller_type=ControllerType.OSC_POSE):
@@ -178,7 +129,7 @@ class RoboSim:
         self.env = VisualizationWrapper(self.env, self.markers)
         self.env.sim.forward()
         self.env.sim.step()
-        logging.info(f"Marker {name} added at {pos}.")
+        log.debug(f"Marker {name} added at {pos}.")
     
     async def add_grasp_marker(self, *args):
         grasp_pos = self.robot.get_grasp_pose()[0]
@@ -210,7 +161,7 @@ class RoboSim:
         self.env.sim.step()
         self.env.render()
         resp = f"Marker {name} moved to {position} with orientation {orientation}."
-        logging.info(resp)
+        log.debug(resp)
         return resp
     
     def pixel_to_marker(self, pixel, camera_name="robot0_eye_in_hand"):
@@ -219,13 +170,13 @@ class RoboSim:
         
         camera = Camera(self.env, camera_name)
         marker_pose = camera.pixel_to_world(pixel)
-        logging.info(f"Marker Pose: {marker_pose}")
+        log.debug(f"Marker Pose: {marker_pose}")
         self.move_marker(marker_pose)
         return str(marker_pose)       
         
 
     def start(self):
-        logging.info("Starting Robosuite Simulation...")
+        log.info("Starting Robosuite Simulation...")
 
         self.env.reset()
         self.env.render()
@@ -301,12 +252,12 @@ class RoboSim:
         await asyncio.sleep(delay)  
     
     async def pause_execution(self):
-        logging.info("Pausing execution...")
+        log.info("Pausing execution...")
         self.__pause_execution.set()
         return True
     
     async def resume_execution(self):
-        logging.info("Resuming execution...")
+        log.info("Resuming execution...")
         self.__pause_execution.clear()
         self.__executing_async.set()
         return True
@@ -317,12 +268,13 @@ class RoboSim:
         '''
         if self.current_task == None and self.tasks:
             self.current_task = self.tasks.pop(0)
-            logging.info(f"Current Task: {self.current_task.name}")
+            log.info(f"Current Task: {self.current_task.name}")
 
         if self.current_task:
             if self.current_task.task_class != TaskClass.CONTROL_TASK:
+                log.info(f"Executing Task: {self.current_task.name}")
                 data = await self.current_task.execute()
-                logging.info(f"Data: {data}")
+                log.info(f"Data: {data}")
                 self.finish_current_task()
                 return OSCControlStep().to_list()
             return await self.do_current_task()
@@ -334,7 +286,7 @@ class RoboSim:
         Execute the current task in the queue.
         '''
         action = self.current_task.execute()
-        logging.debug(f"Action: {action}")
+        log.debug(f"Action: {action}")
         if action == OSCControlStep().to_list():
             self.finish_current_task()
         return action
@@ -343,7 +295,7 @@ class RoboSim:
         '''
         Finish the current task in the queue.
         '''
-        logging.info(f"Task finished: {self.current_task.name}")
+        log.info(f"Task finished: {self.current_task.name}")
         self.current_task = None
         self.robot.__goal_position = None
     
@@ -353,7 +305,7 @@ class RoboSim:
         '''
         task = self.task_factory.create_task(function, name, *args, **kwargs)
         self.tasks.append(task)
-        logging.info(f"Task added: {task}")
+        log.info(f"Task added: {task}")
     
     def get_tasks(self):
         return self.tasks
@@ -370,12 +322,25 @@ class RoboSim:
         img = Image.fromarray(im[::-1])
         self.__getting_image.clear()
         return img
+    
+    def get_object_names(self):
+        return [obj.name for obj in self.env.objects]
+
+    def get_object_pose(self):
+        for obj in self.env.objects:
+            dist = self.env._gripper_to_target(
+                    gripper=self.env.robots[0].gripper,
+                    target=obj.root_body,
+                    target_type="body",
+                    return_distance=True,
+                )
+            log.info(f"Object {obj.name}: {dist}")
 
 if __name__ == "__main__":
     sim = RoboSim()
     sim.setup()
     available_tasks = sim.task_factory.get_task_types()
-    logging.info(f"Available Tasks: {available_tasks}")
+    log.info(f"Available Tasks: {available_tasks}")
     sim.add_task('Position Check', 'go_to_position', [-0.3, -0.3, 1])
     sim.add_task('Relative Position Check', 'go_to_relative_position', [0.3, 0.1, 0.1])
     sim.add_task('Go to can', 'go_to_object', 'Can')

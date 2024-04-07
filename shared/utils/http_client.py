@@ -10,7 +10,7 @@ load_dotenv()
 
 import logging
 log = logging.getLogger("http_client")
-log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
 
 TIMEOUT_DEFAULT = 5.0
 

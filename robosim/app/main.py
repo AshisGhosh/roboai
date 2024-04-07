@@ -10,7 +10,7 @@ from pydantic import BaseModel
 from robosim.robosim import RoboSim
 
 import logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=logging.DEBUG)
 
 # Create FastAPI instance
 app = FastAPI()
@@ -51,7 +51,7 @@ async def test():
     robosim.clear_tasks()
 
     await add_task(Task(name="go to pick", type="go_to_pick_center", args=""))
-    await add_task(Task(name="get grasp", type="get_grasp", args=""))
+    await add_task(Task(name="get grasp", type="get_grasp", args="cereal"))
     await add_task(Task(name="go to pre grasp", type="go_to_pre_grasp", args=""))
     await add_task(Task(name="open gripper", type="open_gripper", args=""))
     await add_task(Task(name="go to grasp pos", type="go_to_grasp_position", args=""))

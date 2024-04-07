@@ -7,7 +7,7 @@ import logging
 logging.basicConfig(level=logging.WARN)
 
 log = logging.getLogger("roboai")
-log.setLevel(logging.DEBUG)
+log.setLevel(logging.INFO)
 
 class Tool(BaseModel):
     name: str
