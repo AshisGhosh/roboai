@@ -122,10 +122,8 @@ class GraspHandler:
         markers = ["gripper0_grip_site", "gripper0_grip_site_cylinder", "gripper_goal", "grasp_marker"]
         for marker in markers:
             self.robot.robosim.env.sim.model.site_rgba[self.robot.robosim.env.sim.model.site_name2id(marker)][3] = 0
-        # self.robot.robosim.env.robots[0].gripper.set_sites_visibility(self.robot.robosim.env.sim, False)
-        # self.robot.robosim.env.sim.forward()
-        # self.robot.robosim.env.sim.step()
-
+        
+        self.env.step(np.zeros(self.env.action_dim))
         im = self.robot.robosim.env._get_observations()
         img = Image.fromarray(im["robot0_eye_in_hand_image"][::-1])
         depth = im["robot0_eye_in_hand_depth"][::-1]

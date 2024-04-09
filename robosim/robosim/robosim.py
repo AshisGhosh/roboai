@@ -10,6 +10,9 @@ import robosuite as suite
 from robosuite import load_controller_config
 from robosuite.wrappers import VisualizationWrapper
 from robosuite.utils.transform_utils import mat2quat, euler2mat
+from robosuite.utils.camera_utils import CameraMover
+from robosuite.utils.mjcf_utils import new_body, new_site
+
 
 import logging
 log = logging.getLogger("robosim")
@@ -58,11 +61,11 @@ class RoboSim:
     
     def setup(self):
         self.env = self.setup_env()
+        self.setup_markers()
+        self.setup_cameras()
+        # self.setup_cameras_and_markers()
         self.robot = Robot(self)
         self.register_tasks()
-        # test_markers(self.env)
-        # self.env = test_vis_wrapper(self.env)
-        self.setup_markers()
         # self.test_action([0,0,0,0,0,0,0,0])
     
     def register_tasks(self):
@@ -96,8 +99,8 @@ class RoboSim:
             render_camera="frontview",
             # render_camera="robot0_eye_in_hand",
             camera_names=["frontview", "agentview", "robot0_eye_in_hand"],
-            camera_heights=[512, 512, 480],
-            camera_widths=[512, 512, 640],
+            camera_heights=[672, 672, 480],
+            camera_widths=[672, 672, 640],
             camera_depths=[False, False, True],  # set to true for using depth sensor
             has_offscreen_renderer=True,
             use_object_obs=False,                  
@@ -107,6 +110,33 @@ class RoboSim:
         # reset the environment
         env.reset()
         return env
+    
+    def setup_cameras_and_markers(self):
+        self.camera_mover = CameraMover(self.env, "agentview")
+
+        self.markers = []
+        self.add_marker([0.5, 0, 2.0], size=0.05, name="grasp_marker")
+        self.add_marker([0.5, 0, 2.0], type="box", size=(0.03, 0.05, 0.1), name="gripper_goal")
+
+        self.env.set_xml_processor(processor=self._add_indicators)
+        xml = self.env.sim.model.get_xml()
+        self.env._initialize_sim(xml_string=xml)
+        log.info(self.env.sim)
+
+        for marker in self.markers:
+            log.debug(f"Marker {marker['name']} added at {marker['pos']}.")
+        
+        self.camera_mover.set_camera_pose(pos=[0.5, -0.25, 1.3])
+        self.env.sim.forward()
+        self.env.sim.step()
+
+    def setup_cameras(self):
+        self.camera_mover = CameraMover(self.env, "agentview")
+        self.camera_mover.set_camera_pose(pos=[0.5, -0.25, 1.3])
+        log.info(f"Camera Pose: {self.camera_mover.get_camera_pose()}")
+        self.env.sim.forward()
+        self.env.sim.step()
+        self.env.step(np.zeros(self.env.action_dim))
     
     def setup_markers(self):
         self.markers = []
@@ -129,13 +159,32 @@ class RoboSim:
         self.env = VisualizationWrapper(self.env, self.markers)
         self.env.sim.forward()
         self.env.sim.step()
-        log.debug(f"Marker {name} added at {pos}.")
+        self.env.set_xml_processor(processor=None)
     
+    def _add_indicators(self, xml):
+        import xml.etree.ElementTree as ET
+        root = ET.fromstring(xml)
+        worldbody = root.find("worldbody")
+        for indicator_config in self.markers:
+            config = copy.deepcopy(indicator_config)
+            indicator_body = new_body(name=config["name"] + "_body", pos=config.pop("pos", (0, 0, 0)))
+            indicator_body.append(new_site(**config))
+            worldbody.append(indicator_body)
+
+            xml = ET.tostring(root, encoding="utf8").decode("utf8")
+        
+        return xml
+        
     async def add_grasp_marker(self, *args):
         grasp_pos = self.robot.get_grasp_pose()[0]
         self.add_marker(grasp_pos, name="grasp_marker")
         self.env.render()
         return f"Marker added at {grasp_pos}."
+    
+    def reset(self):
+        self.env.reset()
+        self.setup_markers()
+        self.setup_cameras()
     
     def move_gripper_goal_to_gripper(self):
         gripper_pos = self.robot.get_gripper_position()
@@ -178,7 +227,8 @@ class RoboSim:
     def start(self):
         log.info("Starting Robosuite Simulation...")
 
-        self.env.reset()
+        # self.env.reset()
+        self.reset()
         self.env.render()
         action = None
         for i in range(1000):
@@ -191,7 +241,8 @@ class RoboSim:
     async def start_async(self):
         if self.render_task is None or self.render_task.done():
             self.__close_renderer_flag.clear()
-            self.env.reset()            
+            # self.env.reset()
+            self.reset()
 
             self.render_task = asyncio.create_task(self.render())
         return True
@@ -315,12 +366,27 @@ class RoboSim:
         if self.current_task:
             self.finish_current_task()
     
-    async def get_image(self, camera_name="agentview", width=512, height=512) -> Image:
+    async def get_image_realtime(self, camera_name="agentview", width=512, height=512) -> Image:
         self.__getting_image.set()
         self.__getting_image_ts = asyncio.get_event_loop().time()
         im = self.env.sim.render(width=width, height=height, camera_name=camera_name)
         img = Image.fromarray(im[::-1])
         self.__getting_image.clear()
+        return img
+    
+    async def get_image(self, camera_name="agentview") -> Image:
+        markers = ["gripper0_grip_site", "gripper0_grip_site_cylinder", "gripper_goal", "grasp_marker"]
+        for marker in markers:
+            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0
+
+        self.env.step(np.zeros(self.env.action_dim))
+        im = self.env._get_observations()[camera_name + "_image"]
+        img = Image.fromarray(im[::-1])
+
+        # turn on marker visualization
+        for marker in markers:
+            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0.25
+        
         return img
     
     def get_object_names(self):
