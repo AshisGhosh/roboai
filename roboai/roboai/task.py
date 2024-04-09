@@ -1,7 +1,8 @@
+import io
+import base64
+
 from pydantic import BaseModel
 from typing import Callable
-
-from litellm import completion
 
 import logging
 logging.basicConfig(level=logging.WARN)
@@ -35,6 +36,38 @@ class Task():
     
     def add_solving_agent(self, agent):
         self.solving_agents.append(agent)
+
+    def add_task_image(self, image):
+        try:
+            # Create a bytes buffer to hold the image data
+            buffer = io.BytesIO()
+            # Save the Pillow image object to the buffer in a specific format (e.g., JPEG)
+            image.save(buffer, format="JPEG")
+            # Seek to the start of the buffer
+            buffer.seek(0)
+            # Read the buffer content and encode it to Base64
+            image_str = base64.b64encode(buffer.read()).decode("utf-8")
+            
+            # Format the Base64 string as a data URL, specifying the MIME type
+            # data_url = f"data:image/jpeg;base64,{image_str}"
+            data_url = image_str
+
+            # Update the task description with the text and the image data URL
+            self.task_description = [
+                {
+                    "type": "text",
+                    "text": self.task_description
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": data_url
+                    }
+                }
+            ]
+            log.info("Task image added.")
+        except Exception as e:
+            log.error(f"Failed to add task image: {e}")
 
     
     def register_tool(self, name, func, description, example):
@@ -81,10 +114,10 @@ class Task():
                     }
             }
         )
-        log.info(f"Task:    '{self.task_description}'")
+        log.info(f"Task:    '{str(self.task_description)[:200]}'")
         for agent in self.solving_agents:
             response = self.task_chat(agent, self.chat_messages)
-            log.info(f"> AGENT '{agent.name}':     {response}")
+            log.info(f"> AGENT '{agent.name}':     {str(response)[:200]}")
             self.chat_messages.append(
                 {
                     agent.name:
@@ -112,7 +145,7 @@ class Task():
                 message = m[next(iter(m))] 
                 agent_messages.append(message)
         
-        log.debug(agent_messages)
+        log.debug(str(agent_messages)[:200])
         response = agent.task_chat(agent_messages)
         return response
     

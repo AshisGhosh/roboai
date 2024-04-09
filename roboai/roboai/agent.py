@@ -1,3 +1,5 @@
+import time
+import litellm
 from litellm import completion
 
 import logging
@@ -9,8 +11,11 @@ load_dotenv()  # take environment variables from .env.
 log = logging.getLogger("roboai")
 log.setLevel(logging.INFO)
 
+# litellm.success_callback = ["langfuse"]
+
+
 class Agent:
-    def __init__(self, name, model, system_message=""):
+    def __init__(self, name, model, system_message="", base_url=None):
         self.name = name
         self.model = model
         self._last_response = None
@@ -18,10 +23,17 @@ class Agent:
         self.messages = []
         self.system_message = system_message
         self.set_system_message(system_message)
+        self.base_url = base_url
 
     def chat(self, message):
         self.messages.append({"content": message, "role": "user"})
-        response = completion(model=self.model, messages=self.messages)
+        completion_args = {
+            "model": self.model,
+            "messages": self.messages,
+        }
+        if self.base_url:
+            completion_args["base_url"] = self.base_url
+        response = completion(**completion_args)
         self._last_response = response
         self._last_response_content = response["choices"][0]["message"]["content"]
         self.messages.append({"content": self._last_response_content, "role": "assistant"})
@@ -29,7 +41,16 @@ class Agent:
         return self._last_response_content
     
     def task_chat(self, messages):
-        response = completion(model=self.model, messages=messages)
+        completion_args = {
+            "model": self.model,
+            "messages": messages,
+        }
+        if self.base_url:
+            completion_args["base_url"] = self.base_url
+        
+        start = time.time()
+        response = completion(**completion_args)
+        log.debug(f"Completion time: {time.time() - start}")
         self._last_response = response
         self._last_response_content = response["choices"][0]["message"]["content"]        
         return self._last_response_content

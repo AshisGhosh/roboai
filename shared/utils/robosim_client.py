@@ -1,5 +1,7 @@
 import asyncio
-from shared.utils.http_client import get_request, post_request
+from shared.utils.http_client import get_request, post_request, get_image_request
+import io
+from PIL import Image
 
 SERVER_NAME = "http://localhost:8000"
 
@@ -8,6 +10,20 @@ async def _get_objects_on_table() -> list[str]:
 
 def get_objects_on_table():
     return asyncio.run(_get_objects_on_table())
+
+async def _get_image() -> Image:
+    img_data = await get_image_request(f"{SERVER_NAME}/get_image")
+    return Image.open(io.BytesIO(img_data))
+
+def get_image():
+    return asyncio.run(_get_image())
+
+async def _get_grasp_image() -> Image:
+    img_data = await get_image_request(f"{SERVER_NAME}/get_grasp_image")
+    return Image.open(io.BytesIO(img_data))
+
+def get_grasp_image():
+    return asyncio.run(_get_grasp_image())
 
 async def _open_gripper():
     return await post_request(f"{SERVER_NAME}/add_task", data={"name": "open gripper", "type": "open_gripper", "args": ""})

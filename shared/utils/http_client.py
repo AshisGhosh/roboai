@@ -27,9 +27,11 @@ async def post_request(url: str, params: Optional[Dict[str, Any]] = None, data: 
     try:
         async with httpx.AsyncClient(timeout=timeout) as client:
             response = await client.post(url, params=params, json=data, files=files, headers=headers, timeout=timeout)
-            response = response.json()
-            log.debug(f"Response: {response}")
-            return response
+            if response.status_code == 200:
+                response = response.json()
+                log.debug(f"Response: {response}")
+                return response
+            raise Exception(f"Error:{response.status_code}: {response.text}")
     except httpx.ReadTimeout as e:
         log.debug(
             f"Timeout sending POST request to {url} with params: {params} and timeout: {timeout}: {e}")
@@ -44,5 +46,25 @@ async def get_request(url: str) -> Dict[str, Any]:
     log.debug(f"Sending GET request to {url}")
     async with httpx.AsyncClient() as client:
         response = await client.get(url)
-        log.debug(f"Response: {response.json()}")
-        return response.json()
+        log.debug(response)
+        if response.status_code == 200:
+            log.debug(f"Response: {response.json()}")
+            return response.json()
+        else:
+            log.debug(f"Error: {response.text}")
+            return {"success": False, "text": f"{response.status}{response.text}"}
+    
+async def get_image_request(url: str) -> bytes:
+    log.debug(f"Sending GET request to {url}")
+    async with httpx.AsyncClient() as client:
+        response = await client.get(url)
+        log.debug(response)
+        if response.status_code == 200:
+            image_data = bytearray()
+            for chunk in response.iter_bytes():
+                image_data += chunk
+            log.debug(f"Response: ({type(image_data)}) {image_data[:10]}")
+            return image_data
+        else:
+            log.debug(f"Error: {response.text}")
+            return b""

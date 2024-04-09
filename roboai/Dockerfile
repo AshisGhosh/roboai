@@ -1,19 +1,30 @@
 FROM python:3.11-slim
 
+ARG PROJECT=robosim
+
+
+RUN apt-get update && apt-get install -y \
+    git \
+    wget \
+    ffmpeg \
+    libsm6 \
+    libxext6 \
+    libgl1-mesa-glx
+
 # Install Poetry
-# RUN conda run -n robot_env pip install poetry
-# RUN conda run -n robot_env poetry config virtualenvs.create false
 RUN pip install poetry
 RUN poetry config virtualenvs.create false
 
-# Copy only the pyproject.toml and poetry.lock* to install dependencies
-COPY pyproject.toml poetry.lock* /app/
+COPY shared/pyproject.toml shared/poetry.lock* /app/shared/
+RUN cd /app/shared && poetry install --no-dev
 
-WORKDIR /app
+# Copy only the pyproject.toml and poetry.lock* to install dependencies
+COPY ${PROJECT}/pyproject.toml ${PROJECT}/poetry.lock* /app/
 
 # Install dependencies
-# RUN conda run -n robot_env poetry install --no-dev
-RUN poetry install --no-dev
+RUN cd /app && poetry install --no-dev
+
+WORKDIR /app
 
 # Use the entrypoint script to activate the Conda environment
 # ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
