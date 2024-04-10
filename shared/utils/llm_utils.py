@@ -2,6 +2,8 @@ import litellm
 import ollama
 import numpy as np
 
+from shared.utils.model_server_client import embed
+
 from dotenv import load_dotenv
 load_dotenv("shared/.env")  # take environment variables from .env.
 
@@ -17,6 +19,11 @@ def log_debug(msg):
 def log_info(msg):
     log.info(msg)
     # print(msg)
+
+def get_embedding_sentence_transformers(text):
+    log_debug(f"Getting embedding for text: {text}")
+    response = embed(text)
+    return response['embedding']
 
 def get_embedding_ollama(text):
     log_debug(f"Getting embedding for text: {text}")
@@ -36,7 +43,7 @@ def get_embedding_litellm(text):
     return response["data"][0]["embedding"]
 
 def get_embedding(text):
-    return get_embedding_litellm(text)
+    return get_embedding_sentence_transformers(text)
 
 def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     dot_product = np.dot(v1, v2)
