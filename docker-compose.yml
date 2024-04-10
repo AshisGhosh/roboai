@@ -63,7 +63,7 @@ services:
       - DISPLAY=${DISPLAY}
       - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
-    command: python -u -m robosim.robosim
+    command: python -u -m robosim.quick_start
     network_mode: host
 
   robosim-server:
