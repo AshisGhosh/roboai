@@ -1,4 +1,5 @@
-from litellm import embedding
+import litellm
+import ollama
 import numpy as np
 
 from dotenv import load_dotenv
@@ -8,6 +9,7 @@ import logging
 log = logging.getLogger("llm_utils")
 log.setLevel(logging.INFO)
 
+
 def log_debug(msg):
     log.debug(msg)
     # print(msg)
@@ -16,14 +18,25 @@ def log_info(msg):
     log.info(msg)
     # print(msg)
 
-def get_embedding(text):
+def get_embedding_ollama(text):
     log_debug(f"Getting embedding for text: {text}")
-    response = embedding(
+    response = ollama.embeddings(
+        model='mxbai-embed-large', 
+        prompt=text
+    )
+    return response['embedding']
+
+def get_embedding_litellm(text):
+    log_debug(f"Getting embedding for text: {text}")
+    response = litellm.embedding(
         model='huggingface/mixedbread-ai/mxbai-embed-large-v1', 
         input=[text]
     )
     log_debug(f"Embedding received: {response}")
     return response["data"][0]["embedding"]
+
+def get_embedding(text):
+    return get_embedding_litellm(text)
 
 def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     dot_product = np.dot(v1, v2)

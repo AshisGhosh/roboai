@@ -114,10 +114,10 @@ class Task():
                     }
             }
         )
-        log.info(f"Task:    '{str(self.task_description)[:200]}'")
+        log.info(f"Task:    '{str(self.task_description)[:200]}...'")
         for agent in self.solving_agents:
             response = self.task_chat(agent, self.chat_messages)
-            log.info(f"> AGENT '{agent.name}':     {str(response)[:200]}")
+            log.info(f"> AGENT '{agent.name}':     {str(response)[:200]}...")
             self.chat_messages.append(
                 {
                     agent.name:
@@ -145,7 +145,7 @@ class Task():
                 message = m[next(iter(m))] 
                 agent_messages.append(message)
         
-        log.debug(str(agent_messages)[:200])
+        log.debug(f"{str(agent_messages)[:200]}...")
         response = agent.task_chat(agent_messages)
         return response
     

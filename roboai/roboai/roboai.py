@@ -21,7 +21,7 @@ class Tool(BaseModel):
     example: str
 
 def extract_code(raw_input, language="python"):
-    start_delimiter = f"```{language}\n"
+    start_delimiter = f"```{language}"
     if start_delimiter not in raw_input:
         start_delimiter = "```"
 
@@ -31,7 +31,7 @@ def extract_code(raw_input, language="python"):
     else:
         code_start_index += len(start_delimiter)
 
-    end_delimiter = "\n```"
+    end_delimiter = "```"
     code_end_index = raw_input.find(end_delimiter, code_start_index)
     code = raw_input[code_start_index:code_end_index].strip()
     log.debug(f"Extracted code: \n{code}")
@@ -48,35 +48,41 @@ class RobotJob:
             1. Understand the scene
             2. Create a plan to clear the table
         '''        
+
+        im = get_image()
+        output = gradio_answer_question_from_image(im, "Concisely describe the objects on the table.")
+        if "result" not in output.keys():
+            log.error("No result found.")
+            return
         
-        task = Task("Return python code to identify the objects on the table using only the provided functions.")
-        task.register_tool(
-            name='get_objects_on_table',
-            func=get_objects_on_table,
-            description='Returns a list of the objects on the table.',
-            example='"objects_on_table = get_objects_on_table()" --> Returns: ["Object 1", "Object 2", "Object 3"]',
-        )
+        output = output["result"]
+
+        task = Task(
+            f"Given the following summary, return just a list in python of the objects on the table. The table is not an object. Summary: \n{output}",
+            expected_output_format="""
+                objects_on_table = ["Object 1", "Object 2", "Object 3"]
+            """
+            )
         analyzer_agent = Agent(
             name="Analyzer",
             model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
             system_message="""
             You are a helpful agent that concisely responds with only code.
-            Use only the provided functions.
-            """ + task.generate_tool_prompt()
+            Use only the provided functions, do not add any extra code.
+            """
         )
         task.add_solving_agent(analyzer_agent)
-        
-        log.info(task)
         output = task.run()
-
+        # output = '```objects_on_table = ["Box of Cereal", "Carton of Milk", "Can of Soup"]```'
         code = extract_code(output)
-        exec_vars = task.get_exec_vars()
+        exec_vars = {}
         exec(code, exec_vars)
         log.info(exec_vars.get("objects_on_table", None))
+        list_of_objects = exec_vars.get("objects_on_table", None)
 
         plan_task = Task(
             f"""Create a plan for a robot to remove the following objects from the table:
-                {exec_vars.get("objects_on_table", None)}
+                {list_of_objects}
                 Do not add any extra steps.
             """,
             expected_output_format="""
@@ -86,21 +92,20 @@ class RobotJob:
                 4. place object2
                 5. pick object3
                 6. place object3
-                ...
             """
         )
         plan_task.register_tool(
             name="pick",
             func=pick,
             description="Robot picks up the provided arg 'object_name'",
-            example='"pick_success = pick(object_name="Cheese")" --> Returns: True '
+            example='"pick_success = pick(object_name="Object 1")" --> Returns: True '
         )
 
         plan_task.register_tool(
             name="place",
             func=place,
             description="Robot places the provided arg 'object_name'",
-            example='"place_success = place(object_name="Cheese")" --> Returns: True '
+            example='"place_success = place(object_name="Object 1")" --> Returns: True '
         )
 
         planner_agent = Agent(
@@ -114,52 +119,65 @@ class RobotJob:
         )
 
         plan_task.add_solving_agent(planner_agent)
-        log.info(plan_task)
+        # log.info(plan_task)
         output = plan_task.run()
+        log.info(output)
+
+
+        plan_generated = True
+        code = extract_code(output)
+        exec_vars = plan_task.get_exec_vars()
+        try:
+            exec(code, exec_vars)
+        except Exception as e:
+            log.error(f"Error executing plan: {e}")
+            plan_generated = False
 
         # Validate the plan?
 
         # Execute the plan
-        coder_task = Task(
-            f"""Return python code to execute the plan using only the provided functions.
-                {output}
-            """
+        if not plan_generated:
+            coder_task = Task(
+                f"""Return python code to execute the plan using only the provided functions.
+                    {output}
+                """
+                )
+            coder_task.register_tool(
+                name="pick",
+                func=pick,
+                description="Robot picks up the provided arg 'object_name'",
+                example='"pick_success = pick(object_name="Object 1")" --> Returns: True '
             )
-        coder_task.register_tool(
-            name="pick",
-            func=pick,
-            description="Robot picks up the provided arg 'object_name'",
-            example='"pick_success = pick(object_name="Cheese")" --> Returns: True '
-        )
-        coder_task.register_tool(
-            name="place",
-            func=place,
-            description="Robot places the provided arg 'object_name'",
-            example='"place_success = place(object_name="Cheese")" --> Returns: True '
-        )
-        coder_agent = Agent(
-            name="Coder",
-            model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
-            system_message="""
-            You are a coder that writes concise and exact code to execute the plan.
-            Use only the provided functions.
-            """ + coder_task.generate_tool_prompt()
-        )
-        coder_task.add_solving_agent(coder_agent)
-        log.info(coder_task)
-        output = coder_task.run()
+            coder_task.register_tool(
+                name="place",
+                func=place,
+                description="Robot places the provided arg 'object_name'",
+                example='"place_success = place(object_name="Object 1")" --> Returns: True '
+            )
+            coder_agent = Agent(
+                name="Coder",
+                model="ollama/gemma:7b",
+                system_message="""
+                You are a coder that writes concise and exact code to execute the plan.
+                Use only the provided functions.
+                """ + coder_task.generate_tool_prompt()
+            )
+            coder_task.add_solving_agent(coder_agent)
+            log.info(coder_task)
+            output = coder_task.run()
 
-        code = extract_code(output)
-        exec_vars = coder_task.get_exec_vars()
-        exec(code, exec_vars)
+            code = extract_code(output)
+            exec_vars = coder_task.get_exec_vars()
+            exec(code, exec_vars)
 
 import cv2
 import numpy as np
+from shared.utils.gradio_client import gradio_answer_question_from_image
 
 if __name__ == "__main__":
-    # job = RobotJob()
-    # job.run()
-    im = get_image()
+    job = RobotJob()
+    job.run()
+    # im = get_image()
     # im = Image.open("/app/shared/data/test2.png")
     # task = Task("Describe whats on the table.")
     # task.add_task_image(im)
@@ -171,9 +189,9 @@ if __name__ == "__main__":
     # )
     # task.add_solving_agent(agent)
     # output = task.run()
-    output = answer_question_from_image(im, "Concisely describe the objects on the table.")
-    print(output)
+    # output = gradio_answer_question_from_image(im, "Concisely describe the objects on the table.")
+    # print(output)
     
-    im = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
-    cv2.imshow("Image", im)
-    cv2.waitKey(0)
+    # im = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
+    # cv2.imshow("Image", im)
+    # cv2.waitKey(0)
