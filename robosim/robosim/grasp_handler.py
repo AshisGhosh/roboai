@@ -143,8 +143,8 @@ class GraspHandler:
         grasps = await self.get_grasp_from_image(img)
 
         candidate_objs = [obj["cls_name"].replace("_", " ") for obj in grasps]
-        log.info(f"Getting closest object to {obj_name} from {candidate_objs}")
-        closest_obj = llm_utils.get_closest_text(obj_name, candidate_objs)
+        log.info(f"Getting closest object to '{obj_name}' from {candidate_objs}")
+        closest_obj = await llm_utils.get_closest_text(obj_name, candidate_objs)
         log.info(f"Closest object: {closest_obj}") 
         grasp = grasps[candidate_objs.index(closest_obj)]  
 
