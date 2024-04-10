@@ -95,6 +95,7 @@ class Grasp:
 class GraspHandler:
     def __init__(self, robot):
         self.robot = robot
+        self.env = robot.robosim.env
 
     async def get_grasp_from_image(self, image: Image, visualize=True):
         res = await _get_grasp_from_image(image)
@@ -106,14 +107,14 @@ class GraspHandler:
         # turn off marker visualization
         markers = ["gripper0_grip_site", "gripper0_grip_site_cylinder", "gripper_goal", "grasp_marker"]
         for marker in markers:
-            self.robot.robosim.env.sim.model.site_rgba[self.robot.robosim.env.sim.model.site_name2id(marker)][3] = 0
+            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0
 
-        im = self.robot.robosim.env._get_observations()["robot0_eye_in_hand_image"]
+        im = self.env._get_observations()["robot0_eye_in_hand_image"]
         img = Image.fromarray(im[::-1])
 
         # turn on marker visualization
         for marker in markers:
-            self.robot.robosim.env.sim.model.site_rgba[self.robot.robosim.env.sim.model.site_name2id(marker)][3] = 0.25
+            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0.25
 
         return img
     
@@ -121,16 +122,16 @@ class GraspHandler:
         # turn off marker visualization
         markers = ["gripper0_grip_site", "gripper0_grip_site_cylinder", "gripper_goal", "grasp_marker"]
         for marker in markers:
-            self.robot.robosim.env.sim.model.site_rgba[self.robot.robosim.env.sim.model.site_name2id(marker)][3] = 0
+            self.env.sim.model.site_rgba[self.robot.robosim.env.sim.model.site_name2id(marker)][3] = 0
         
         self.env.step(np.zeros(self.env.action_dim))
-        im = self.robot.robosim.env._get_observations()
+        im = self.env._get_observations()
         img = Image.fromarray(im["robot0_eye_in_hand_image"][::-1])
         depth = im["robot0_eye_in_hand_depth"][::-1]
 
         # turn on marker visualization
         for marker in markers:
-            self.robot.robosim.env.sim.model.site_rgba[self.robot.robosim.env.sim.model.site_name2id(marker)][3] = 0.25
+            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0.25
 
         return img, depth
 

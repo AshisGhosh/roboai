@@ -21,6 +21,7 @@ class Robot:
         self.__goal_position = None
         self.__goal_orientation = None
         self.__grasp_sequence = None
+        self.__gripper_contact_started = None
         
     def go_to_position(self, position):
         if self.__goal_position is None:
@@ -50,7 +51,7 @@ class Robot:
         return self.simple_velocity_control(dist)
     
     def go_to_pick_center(self, *args):
-        return self.go_to_pose(pose=[-0.02, -0.27, 1.05, 0, 0, 0])
+        return self.go_to_pose(pose=[-0.02, -0.27, 1.1, 0, 0, 0])
     
     def go_to_drop(self, *args):
         return self.go_to_pose(pose=[ 0.1, -0.57, 1.1, 0, 0, 0])
@@ -106,13 +107,13 @@ class Robot:
 
     def go_to_grasp_orientation(self, *args):
         grasp_pose = self.__grasp_sequence[1]
-        grasp_ori = [0,0, grasp_pose[1] - np.pi/2]
+        grasp_ori = [0,0, grasp_pose[1]]
         return self.go_to_orientation(grasp_ori)
     
     def go_to_grasp_position(self, *args):
         grasp_pose = copy.deepcopy(self.__grasp_sequence[1])
         grasp_position = grasp_pose[0]
-        grasp_position[2] -= 0.02
+        grasp_position[2] -= 0.01
         return self.go_to_position(grasp_position)
     
     def go_to_pre_grasp(self, *args):
@@ -252,9 +253,38 @@ class Robot:
         distance = np.linalg.norm(right_fingerpad_pos - left_fingerpad_pos)
         log.debug(f"     Distance: {distance}")
 
-        if gripper_contacts or distance < 0.01:
+
+
+        if self._is_gripper_closed():
             return [0, 0, 0, 0, 0, 0, 0]
         return [0, 0, 0, 0, 0, 0, 1]
+
+    def _is_gripper_closed(self):
+        gripper = self.env.robots[0].gripper
+        gripper_contacts = get_contacts(self.robosim.env.sim, gripper)
+        log.info(f"Gripper contacts: {gripper_contacts}")
+
+        right_fingerpad_pos = self.env.sim.data.get_geom_xpos(gripper.important_geoms["right_fingerpad"][0])
+        left_fingerpad_pos = self.env.sim.data.get_geom_xpos(gripper.important_geoms["left_fingerpad"][0])
+        log.debug(f"     Right fingerpad position: {right_fingerpad_pos}")
+        log.debug(f"     Left fingerpad position: {left_fingerpad_pos}")
+        distance = np.linalg.norm(right_fingerpad_pos - left_fingerpad_pos)
+        log.debug(f"     Distance: {distance}")
+
+        if gripper_contacts:
+            if self.__gripper_contact_started is None:
+                self.__gripper_contact_started = [left_fingerpad_pos, right_fingerpad_pos]
+            else:
+                if np.linalg.norm(self.__gripper_contact_started[0] - left_fingerpad_pos) > 0.01 and np.linalg.norm(self.__gripper_contact_started[1] - right_fingerpad_pos) > 0.01:
+                    return False
+                return True
+        else:
+            self.__gripper_contact_started = None
+        
+        if distance < 0.01:
+            return True
+        return False
+        
     
     def open_gripper(self, *args):
         gripper = self.env.robots[0].gripper
