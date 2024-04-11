@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
 from fastapi.responses import JSONResponse
 
-from grasp_server.grasp import GraspServer
+from grasp_server.grasp_det_seg import GraspServer
 
 import logging
 logging.basicConfig(level=logging.INFO)
