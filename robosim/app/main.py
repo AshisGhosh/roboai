@@ -131,6 +131,16 @@ async def get_grasp_image_and_depth():
     logging.debug("Image saved. Ready to stream.")
     return StreamingResponse(buf, media_type="image/png")
 
+@app.get("/get_grasp_depth_image")
+async def get_grasp_image_and_depth_image():
+    logging.info("Getting grasp image and depth...")
+    _img, depth = await robosim.robot.grasp.get_grasp_image_and_depth_image()
+    logging.debug("Image and depth received.")
+    buf_depth = io.BytesIO()
+    depth.save(buf_depth, format="PNG")
+    buf_depth.seek(0)
+    return StreamingResponse(buf_depth, media_type="image/png")
+
 @app.get("/get_image")
 async def get_image():
     logging.info("Getting image...")

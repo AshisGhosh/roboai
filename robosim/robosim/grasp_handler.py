@@ -5,7 +5,7 @@ import numpy as np
 from PIL import Image
 import cv2
 
-from robosuite.utils.camera_utils import get_camera_intrinsic_matrix, get_camera_extrinsic_matrix, get_camera_transform_matrix, get_real_depth_map, transform_from_pixels_to_world
+from robosim.camera import Camera
 
 from shared.utils.grasp_client import _check_server, _get_grasp_from_image
 import shared.utils.llm_utils as llm_utils
@@ -14,37 +14,8 @@ import logging
 log = logging.getLogger("robosim robot grasp")
 log.setLevel(logging.INFO)
 
-class Camera:
-    def __init__(self, env, name, camera_height=480, camera_width=640):
-        self.env = env
-        self.name = name
-        self.camera_height = camera_height
-        self.camera_width = camera_width
-        log.debug(f"Getting intrinsic matrix for {name}")
-        self.intrinsic_matrix = get_camera_intrinsic_matrix(env.sim, name, camera_height, camera_width)
-        log.debug(f"Getting extrinsic matrix for {name}")
-        self.extrinsic_matrix = get_camera_extrinsic_matrix(env.sim, name)
-        log.debug(f"Getting transform matrix for {name}")
-        self.transform_matrix = get_camera_transform_matrix(env.sim, name, camera_height, camera_width)
-        log.debug(f"Getting camera to world transform for {name}")
-        self.camera_to_world_transform = np.linalg.inv(self.transform_matrix)
-        log.debug(f"Camera initialized for {name}")
-
-    def get_world_coords_from_pixels(self, pixels, depth):
-        # cv2.imshow("Depth", depth)
-        # cv2.waitKey(0)
-        log.debug(f"Getting world coordinates from pixels {pixels} and depth {depth.shape}")
-        real_depth_map = get_real_depth_map(self.env.sim, depth)
-        log.debug(f"Real depth map: {real_depth_map.shape}")
-        log.debug(f"pixels leading shape: depth map leading shape -- {pixels.shape[:-1]} -- {real_depth_map.shape[:-3]}")
-        return transform_from_pixels_to_world(pixels, real_depth_map, self.camera_to_world_transform)
-    
-    def pixel_to_world(self, pixel):
-        depth = self.env._get_observations()["robot0_eye_in_hand_depth"][::-1]
-        return self.get_world_coords_from_pixels(np.array(pixel), depth)
-    
 class Grasp:
-    def __init__(self, cls, cls_name, score, bbox, r_bbox, image, depth, env):
+    def __init__(self, cls, cls_name, score, r_bbox, image, depth, env, bbox=None):
         self.cls = cls
         self.cls_name = cls_name
         self.score = score
@@ -90,14 +61,14 @@ class Grasp:
         return world_coords, angle
 
     def __str__(self):
-        return f"Grasp: {self.cls_name} with score {self.score} at bbox {self.bbox}"
+        return f"Grasp: {self.cls_name} with score {self.score} at r_bbox {self.r_bbox}"
 
 class GraspHandler:
     def __init__(self, robot):
         self.robot = robot
         self.env = robot.robosim.env
 
-    async def get_grasp_from_image(self, image: Image, visualize=True):
+    async def get_grasps_from_image(self, image: Image, visualize=True):
         res = await _get_grasp_from_image(image)
         if visualize:
             self.show_image(res["image"])
@@ -134,13 +105,36 @@ class GraspHandler:
             self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0.25
 
         return img, depth
+    
+    async def get_grasp_image_and_depth_image(self):
+        markers = ["gripper0_grip_site", "gripper0_grip_site_cylinder", "gripper_goal", "grasp_marker"]
+        for marker in markers:
+            self.env.sim.model.site_rgba[self.robot.robosim.env.sim.model.site_name2id(marker)][3] = 0
+        
+        self.env.step(np.zeros(self.env.action_dim))
+        im = self.env._get_observations()
+        img = im["robot0_eye_in_hand_image"][::-1]
+        log.info(f"Image shape: {img.shape}")
+        img = Image.fromarray(img)
+        depth = im["robot0_eye_in_hand_depth"][::-1]
+        log.info(f"Depth shape: {depth.shape}")
+        depth = np.squeeze(depth)
+        normalized_depth = (depth - np.min(depth)) / (np.max(depth) - np.min(depth)) * 255
+        depth_uint8 = normalized_depth.astype(np.uint8)
+        depth = Image.fromarray(depth_uint8)
+
+        # turn on marker visualization
+        for marker in markers:
+            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0.25
+
+        return img, depth
 
     async def get_grasp(self, obj_name):
         # return await self.get_grasps()
         log.debug("Getting grasp image and depth...")
         img, depth = await self.get_grasp_image_and_depth()
         log.debug("Getting grasp from image...")
-        grasps = await self.get_grasp_from_image(img)
+        grasps = await self.get_grasps_from_image(img)
 
         candidate_objs = [obj["cls_name"].replace("_", " ") for obj in grasps]
         log.info(f"Getting closest object to '{obj_name}' from {candidate_objs}")
