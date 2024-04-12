@@ -74,7 +74,6 @@ class GraspGenerator:
         grasps = self.generate(rgb, depth)
         grasp_dict = []
         print (grasps[0].as_gr)
-        print(type(grasps[0].as_gr))
         for grasp in grasps:
             r_bbox = [ [pt[0],pt[1]] for pt in grasp.as_gr.points]
             grasp_dict.append({"r_bbox": r_bbox})

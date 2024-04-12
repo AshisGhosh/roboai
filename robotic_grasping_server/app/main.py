@@ -38,8 +38,9 @@ async def startup_event():
     log.info("Starting up the grasp server...")
     grasp.load_model()
 
-@app.post("/get_grasp")
-async def get_grasp(rgb_image:  UploadFile = File(...), depth_image: UploadFile = File(...)):
+@app.post("/get_grasps")
+async def get_grasps(rgb_image:  UploadFile = File(...), depth_image: UploadFile = File(...)):
+    log.debug("Received get_grasp request.")
     rgb_image = Image.open(rgb_image.file)
     depth_image = Image.open(depth_image.file)
     return grasp.run(rgb_image, depth_image)
