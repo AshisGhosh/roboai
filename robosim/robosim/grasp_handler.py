@@ -4,28 +4,36 @@ import io
 import numpy as np
 from PIL import Image
 import cv2
+from enum import Enum
 
 from robosim.camera import Camera
 
 from shared.utils.grasp_client import _check_server, _get_grasp_from_image
+from shared.utils.robotic_grasping_client import _get_grasps_from_rgb_and_depth
 import shared.utils.llm_utils as llm_utils
 
 import logging
 log = logging.getLogger("robosim robot grasp")
-log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
+
+class GraspMethod(Enum):
+    GRASP_DET_SEG = "grasp_det_seg"
+    GR_CONVNET = "gr_convnet"
 
 class Grasp:
-    def __init__(self, cls, cls_name, score, r_bbox, image, depth, env, bbox=None):
-        self.cls = cls
-        self.cls_name = cls_name
-        self.score = score
-        self.bbox = bbox
+    def __init__(self, r_bbox, image, depth, env, bbox=None, cls=None, cls_name=None, score=None):
+        log.debug("Initializing Grasp object.")
         self.r_bbox = r_bbox
         self.image = image
         self.depth = depth
         self.env = env
-        log.debug(f"Initializing camera for {self}")
+        log.debug(f"Initializing camera")
         self.camera = Camera(self.env, "robot0_eye_in_hand")
+
+        self.cls = cls
+        self.cls_name = cls_name
+        self.score = score
+        self.bbox = bbox
 
         self.appoach_poses = []
         self.grasp_pose = None
@@ -54,7 +62,7 @@ class Grasp:
         pt1 = self.r_bbox[0]
         pt2 = self.r_bbox[1]
 
-        angle = np.arctan2(pt2[1] - pt1[1], pt2[0] - pt1[0])
+        angle = np.arctan2(pt2[1] - pt1[1], pt2[0] - pt1[0]) + np.pi / 2
         self.grasp_orientation = angle
         log.debug(f"Grasp orientation: {angle}")
 
@@ -107,29 +115,24 @@ class GraspHandler:
         return img, depth
     
     async def get_grasp_image_and_depth_image(self):
-        markers = ["gripper0_grip_site", "gripper0_grip_site_cylinder", "gripper_goal", "grasp_marker"]
-        for marker in markers:
-            self.env.sim.model.site_rgba[self.robot.robosim.env.sim.model.site_name2id(marker)][3] = 0
-        
-        self.env.step(np.zeros(self.env.action_dim))
-        im = self.env._get_observations()
-        img = im["robot0_eye_in_hand_image"][::-1]
-        log.info(f"Image shape: {img.shape}")
-        img = Image.fromarray(img)
-        depth = im["robot0_eye_in_hand_depth"][::-1]
-        log.info(f"Depth shape: {depth.shape}")
-        depth = np.squeeze(depth)
-        normalized_depth = (depth - np.min(depth)) / (np.max(depth) - np.min(depth)) * 255
+        img, depth = await self.get_grasp_image_and_depth()
+        squeezed_depth = np.squeeze(depth)
+        normalized_depth = (squeezed_depth - np.min(squeezed_depth)) / (np.max(squeezed_depth) - np.min(squeezed_depth)) * 255
         depth_uint8 = normalized_depth.astype(np.uint8)
-        depth = Image.fromarray(depth_uint8)
+        depth_image = Image.fromarray(depth_uint8)
+        return img, depth_image, depth
+    
+    async def get_grasp(self, obj_name, method=GraspMethod.GRASP_DET_SEG):
+        if method == GraspMethod.GRASP_DET_SEG:
+            log.debug("Getting grasp from grasp_det_seg...")
+            return await self.get_grasp_grasp_det_seg(obj_name)
+        elif method == GraspMethod.GR_CONVNET:
+            log.debug("Getting grasp from grasp convnet...")
+            return await self.get_grasp_gr_convnet(obj_name)
+        else:
+            raise ValueError(f"Invalid grasp method: {method}")
 
-        # turn on marker visualization
-        for marker in markers:
-            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0.25
-
-        return img, depth
-
-    async def get_grasp(self, obj_name):
+    async def get_grasp_grasp_det_seg(self, obj_name):
         # return await self.get_grasps()
         log.debug("Getting grasp image and depth...")
         img, depth = await self.get_grasp_image_and_depth()
@@ -141,7 +144,6 @@ class GraspHandler:
         closest_obj = await llm_utils.get_closest_text(obj_name, candidate_objs)
         log.info(f"Closest object: {closest_obj}") 
         grasp = grasps[candidate_objs.index(closest_obj)]  
-
         g_obj = Grasp(
             cls=grasp["cls"],
             cls_name=grasp["cls_name"],
@@ -153,6 +155,26 @@ class GraspHandler:
             env = self.robot.robosim.env
         )
         return grasp, g_obj.generate_grasp_sequence()
+    
+    async def get_grasp_gr_convnet(self, obj_name):
+        log.debug("Getting grasp image and depth...")
+        img, depth_image, depth = await self.get_grasp_image_and_depth_image()
+        log.debug("Getting grasp from image...")
+        grasps = await _get_grasps_from_rgb_and_depth(img, depth_image)
+        grasp = grasps[0]
+        log.debug(f"r_bbox: {grasp['r_bbox']}")
+        g_obj = Grasp(
+            cls=None,
+            cls_name=None,
+            score=None,
+            bbox=None,
+            r_bbox=grasp["r_bbox"],
+            image=img,
+            depth=depth,
+            env = self.robot.robosim.env
+        )
+        return grasp, g_obj.generate_grasp_sequence()
+
     
     async def check_server(self):
         return await _check_server()

@@ -4,7 +4,7 @@ from robosuite.utils.camera_utils import get_camera_intrinsic_matrix, get_camera
 
 import logging
 log = logging.getLogger("robosim robot camera")
-log.setLevel(logging.INFO)
+log.setLevel(logging.DEBUG)
 
 class Camera:
     def __init__(self, env, name, camera_height=480, camera_width=640):
