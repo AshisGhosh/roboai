@@ -8,6 +8,12 @@ class TaskClass(Enum):
     DATA_TASK = 1
     ASYNC_DATA_TASK = 2
 
+class TaskStatus(Enum):
+    PENDING = 0
+    RUNNING = 1
+    COMPLETED = 2
+    FAILED = 3
+
 class TaskFactory:
     def __init__(self):
         self._creators = {}

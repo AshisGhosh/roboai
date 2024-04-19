@@ -193,28 +193,16 @@ class RobotJob:
             exec_vars = coder_task.get_exec_vars()
             exec(code, exec_vars)
 
-import cv2
-import numpy as np
-from shared.utils.gradio_client import gradio_answer_question_from_image
 
 if __name__ == "__main__":
-    job = RobotJob()
-    job.run()
-    # im = get_image()
-    # im = Image.open("/app/shared/data/test2.png")
-    # task = Task("Describe whats on the table.")
-    # task.add_task_image(im)
-    # agent = Agent(
-    #     name="Image Analyzer",
-    #     model="ollama/llava:7b-v1.6-mistral-q5_1",
-    #     system_message="You are an image analyzer. Describe the image.",
-    #     base_url="http://localhost:11434"
-    # )
-    # task.add_solving_agent(agent)
-    # output = task.run()
-    # output = gradio_answer_question_from_image(im, "Concisely describe the objects on the table.")
-    # print(output)
+    # job = RobotJob()
+    # job.run()
     
-    # im = cv2.cvtColor(np.array(im), cv2.COLOR_RGB2BGR)
-    # cv2.imshow("Image", im)
-    # cv2.waitKey(0)
+    # test vqa
+
+    # output = gradio.qwen_vl_max_answer_question_from_image(Image.open("shared/data/tmp.png"), "What is the color of the table?")
+    import shared.utils.huggingface_client as hf
+
+    output = hf.vila_query("What is the color of the table?")
+   
+    print(output)

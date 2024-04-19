@@ -138,6 +138,9 @@ class GraspHandler:
         img, depth = await self.get_grasp_image_and_depth()
         log.debug("Getting grasp from image...")
         grasps = await self.get_grasps_from_image(img)
+        if len(grasps) == 0:
+            log.error("No grasps found.")
+            return None
 
         candidate_objs = [obj["cls_name"].replace("_", " ") for obj in grasps]
         log.info(f"Getting closest object to '{obj_name}' from {candidate_objs}")

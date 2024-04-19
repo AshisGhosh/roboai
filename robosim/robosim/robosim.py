@@ -3,8 +3,8 @@ from dataclasses import dataclass
 from enum import Enum
 import asyncio
 import copy
-
 from PIL import Image
+import httpx
 
 import robosuite as suite
 from robosuite import load_controller_config
@@ -13,14 +13,17 @@ from robosuite.utils.transform_utils import mat2quat, euler2mat
 from robosuite.utils.camera_utils import CameraMover
 from robosuite.utils.mjcf_utils import new_body, new_site
 
-
 import logging
 log = logging.getLogger("robosim")
 log.setLevel(logging.INFO)
 
-from robosim.task import TaskFactory, TaskClass
+from robosim.task import TaskFactory, TaskClass, TaskStatus
 from robosim.robot import Robot
 from robosim.grasp_handler import Camera
+
+import shared.utils.gradio_client as gradio
+from shared.utils.model_server_client import _answer_question_from_image
+import shared.utils.replicate_client as replicate
 
 class ControllerType(Enum):
     JOINT_VELOCITY = 1
@@ -48,13 +51,15 @@ class RoboSim:
         self.task_factory = TaskFactory()
         self.tasks = []
         self.current_task = None
-        # self.__goal_position = None
+        self._last_task = None
+        self._last_task_finish_status = None
 
         self.render_task = None
         self.execute_async_task = None
         self.__close_renderer_flag = asyncio.Event()
         self.__executing_async = asyncio.Event()
         self.__pause_execution = asyncio.Event()
+        self.__stop_execution = asyncio.Event()
         self.__getting_image = asyncio.Event()
         self.__getting_image_ts = None
 
@@ -63,7 +68,6 @@ class RoboSim:
         self.env = self.setup_env()
         self.setup_markers()
         self.setup_cameras()
-        # self.setup_cameras_and_markers()
         self.robot = Robot(self)
         self.register_tasks()
         # self.test_action([0,0,0,0,0,0,0,0])
@@ -110,29 +114,10 @@ class RoboSim:
         # reset the environment
         env.reset()
         return env
-    
-    def setup_cameras_and_markers(self):
-        self.camera_mover = CameraMover(self.env, "agentview")
-
-        self.markers = []
-        self.add_marker([0.5, 0, 2.0], size=0.05, name="grasp_marker")
-        self.add_marker([0.5, 0, 2.0], type="box", size=(0.03, 0.05, 0.1), name="gripper_goal")
-
-        self.env.set_xml_processor(processor=self._add_indicators)
-        xml = self.env.sim.model.get_xml()
-        self.env._initialize_sim(xml_string=xml)
-        log.info(self.env.sim)
-
-        for marker in self.markers:
-            log.debug(f"Marker {marker['name']} added at {marker['pos']}.")
-        
-        self.camera_mover.set_camera_pose(pos=[0.5, -0.25, 1.3])
-        self.env.sim.forward()
-        self.env.sim.step()
 
     def setup_cameras(self):
         self.camera_mover = CameraMover(self.env, "agentview")
-        self.camera_mover.set_camera_pose(pos=[0.5, -0.25, 1.3])
+        self.camera_mover.set_camera_pose(pos=[0.65, -0.25, 1.4])
         log.info(f"Camera Pose: {self.camera_mover.get_camera_pose()}")
         self.env.sim.forward()
         self.env.sim.step()
@@ -141,18 +126,18 @@ class RoboSim:
     def setup_markers(self):
         self.markers = []
         # self.add_marker([0.5, 0, 1.0], size=0.3, name="indicator_ball")
-        self.add_marker([0.5, 0, 2.0], size=0.05, name="grasp_marker")
+        self.add_marker([0.5, 0, 2.0], size=0.05, name="grasp_marker", rgba=[0, 0, 1, 0.65])
         self.add_marker([0.5, 0, 1.0], type="box", size=(0.03, 0.05, 0.1), name="gripper_goal")
 
     def test_action(self, action, *args):
         obs, reward, done, info = self.env.step(action)
 
-    def add_marker(self, pos, type = "sphere", size = 0.03, name = "indicator_ball"):
+    def add_marker(self, pos, type = "sphere", size = 0.03, name = "indicator_ball", rgba = [1, 0, 0, 0.65]):
         indicator_config = {
             "name": name,
             "type": type,
             "size": size,
-            "rgba": [1, 0, 0, 0.65],
+            "rgba": rgba,
             "pos": pos
         }
         self.markers.append(indicator_config)
@@ -271,7 +256,11 @@ class RoboSim:
 
         self.__pause_execution.clear()
         self.__executing_async.set()
-        while self.tasks or self.current_task:            
+        while self.tasks or self.current_task:    
+            if self.__stop_execution.is_set():
+                self.__executing_async.clear()
+                return "Execution stopped."
+                    
             if self.__pause_execution.is_set():
                 await self.manage_execution_delay() 
                 continue
@@ -302,6 +291,11 @@ class RoboSim:
                     self.__getting_image_ts = None
         await asyncio.sleep(delay)  
     
+    async def stop_execution(self):
+        log.info("Stopping execution...")
+        self.__stop_execution.set()
+        return True
+    
     async def pause_execution(self):
         log.info("Pausing execution...")
         self.__pause_execution.set()
@@ -326,6 +320,8 @@ class RoboSim:
                 log.info(f"Executing Task: {self.current_task.name}")
                 data = await self.current_task.execute()
                 log.info(f"Data: {data}")
+                if data is None:
+                    self.finish_current_task(status=TaskStatus.FAILED, status_msg="Task failed.")
                 self.finish_current_task()
                 return OSCControlStep().to_list()
             return await self.do_current_task()
@@ -338,17 +334,28 @@ class RoboSim:
         '''
         action = self.current_task.execute()
         log.debug(f"Action: {action}")
-        if action == OSCControlStep().to_list():
-            self.finish_current_task()
+
+        self.check_if_task_finished(action)
+        
         return action
     
-    def finish_current_task(self):
+    def check_if_task_finished(self, action):
+        if action == OSCControlStep().to_list():
+            self.finish_current_task()
+        if not self.robot.is_gripper_moving(action):
+            self.finish_current_task(status=TaskStatus.FAILED, status_msg="Gripper not moving.")
+
+    
+    def finish_current_task(self, status=TaskStatus.COMPLETED, status_msg=None):
         '''
         Finish the current task in the queue.
         '''
-        log.info(f"Task finished: {self.current_task.name}")
+        log.info(f"Task finished: {self.current_task.name} with status {status} and message {status_msg}.")
+        self._last_task = self.current_task
+        self._last_task_finish_status = { "status": status, "status_msg": status_msg}
         self.current_task = None
         self.robot.__goal_position = None
+        self.robot.__goal_orientation = None
     
     def add_task(self, name, function, *args, **kwargs):
         '''
@@ -389,6 +396,14 @@ class RoboSim:
         
         return img
     
+    async def get_image_with_markers(self, camera_name="agentview") -> Image:
+        
+        self.env.step(np.zeros(self.env.action_dim))
+        im = self.env._get_observations()[camera_name + "_image"]
+        img = Image.fromarray(im[::-1])
+        
+        return img
+    
     def get_object_names(self):
         return [obj.name for obj in self.env.objects]
 
@@ -401,6 +416,59 @@ class RoboSim:
                     return_distance=True,
                 )
             log.info(f"Object {obj.name}: {dist}")
+    
+    async def pick(self, object_name):
+        self.clear_tasks()
+        await self.start_async()
+        # self.add_task("go to object", "go_to_object", object_name)
+        self.add_task("go to pick center", "go_to_pick_center", "")
+        self.add_task("get grasp", "get_grasp", object_name)
+        await self.execute_async()
+        if self._last_task_finish_status["status"] == TaskStatus.FAILED:
+            retry_attempts = 3
+            for i in range(retry_attempts):
+                log.info(f"Retrying pick attempt {i+1}...")
+                self.add_task("go to pick center", "go_to_pick_center", "")
+                self.add_task("get grasp", "get_grasp", object_name)
+                if self._last_task_finish_status["status"] == TaskStatus.COMPLETED:
+                    break
+        success, _ = await self.get_feedback("grasp-selection-feedback", object_name)
+        if not success:
+            log.info("Grasp selection feedback failed.")
+            return False
+        self.add_task("move to pre-grasp", "go_to_pre_grasp", "")
+        self.add_task("open gripper", "open_gripper", "")
+        self.add_task("go to grasp position", "go_to_grasp_position", "")
+        self.add_task("close gripper", "close_gripper", "")
+        await self.execute_async()
+        if self._last_task_finish_status["status"] != TaskStatus.COMPLETED:
+            log.info("Pick failed.")
+            return False
+        success, _ = await self.get_feedback("grasp-feedback", object_name)
+
+    async def get_feedback(self, feedback_type, object_name):
+        if feedback_type == "grasp-selection-feedback":
+            image = await self.get_image_with_markers()
+            question = f"Is the the blue sphere marker over the {object_name}?"
+        elif feedback_type == "grasp-feedback":
+            image = await self.get_image()
+            question = f"Is the object {object_name} grasped by the robot?"
+        log.info(f"Giving feedback for {feedback_type}...")
+        log.info(f"Question: {question}")
+        # output = await _answer_question_from_image(image, question)
+        try:
+            # output = gradio.moondream_answer_question_from_image(image, question)
+            # output = replicate.moondream_answer_question_from_image(image, question)
+            output = gradio.qwen_vl_max_answer_question_from_image(image, question)
+
+        except httpx.ConnectError as e:
+            log.error(f"Error connecting to the model server: {e}")
+            output = await _answer_question_from_image(image, question)
+        log.warn(output)
+        if "yes" in output["result"].lower():
+            return True, output
+        return False, output
+
 
 if __name__ == "__main__":
     sim = RoboSim()

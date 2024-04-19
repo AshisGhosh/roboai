@@ -18,6 +18,8 @@ class Robot:
         self.robosim = robosim
         self.env = robosim.env
         self.grasp = GraspHandler(self)
+        self._last_position = None
+        self._last_orientation = None
         self.__goal_position = None
         self.__goal_orientation = None
         self.__grasp_sequence = None
@@ -124,7 +126,7 @@ class Robot:
 
     def get_gripper_position(self):
         gripper=self.env.robots[0].gripper
-        gripper_pos = self.env.sim.data.get_site_xpos(gripper.important_sites["grip_site"])
+        gripper_pos = copy.deepcopy(self.env.sim.data.get_site_xpos(gripper.important_sites["grip_site"]))
         return gripper_pos
     
     def get_gripper_orientation_in_world(self):
@@ -136,15 +138,46 @@ class Robot:
         gripper_ori = mat2euler(gripper_ori, axes="rxyz")
         return gripper_ori
     
-    def get_gripper_orientation(self):
-        gripper_ori = self.get_gripper_orientation_in_world()
-        gripper_ori = np.transpose(gripper_ori)
-        return gripper_ori
-    
-    def get_gripper_orientation_as_euler(self):
-        gripper_ori = self.get_gripper_orientation()
-        gripper_ori = mat2euler(gripper_ori, axes="rxyz")
-        return gripper_ori
+    def is_gripper_moving(self, action):
+        if action[-1]:
+            return True
+
+        if self._last_position is None:
+            self._last_position = [self.get_gripper_position()]
+            return True
+        if self._last_orientation is None:
+            self._last_orientation = [self.get_gripper_orientation_in_world_as_euler()]
+            return True
+        
+        if len(self._last_position) < 10:
+            self._last_position.append(self.get_gripper_position())
+            self._last_position = None
+            self._last_orientation = None
+            return True
+        if len(self._last_orientation) < 10:
+            self._last_orientation.append(self.get_gripper_orientation_in_world_as_euler())
+            self._last_position = None
+            self._last_orientation = None
+            return True
+        
+        if len(self._last_position) > 10:
+            self._last_position.pop(0)
+        if len(self._last_orientation) > 10:
+            self._last_orientation.pop(0)
+        
+        current_pos = self.get_gripper_position()
+        current_ori = self.get_gripper_orientation_in_world_as_euler()
+        delta_pos = np.linalg.norm(self._last_position[-1] - current_pos)
+        delta_ori = np.linalg.norm(np.array([self._get_closest_distance(a,b) for a, b in zip(self._last_orientation[-1], current_ori)]))
+        self._last_position.append(current_pos)
+        self._last_orientation.append(current_ori)
+
+        log.info(f"Delta Position: {delta_pos}, Delta Orientation: {delta_ori}")
+
+        if delta_pos < 0.001 and delta_ori < 0.01:
+            return False
+
+        return True
         
     def distance_to_position(self, position):
         log.debug(f"    Goal Position: {position}")
@@ -154,6 +187,14 @@ class Robot:
         log.debug(f"    Distance: {dist}")
         return dist
     
+    def _get_closest_distance(self, a, b):
+            dist = np.remainder(a - b, 2*np.pi)
+            if dist > np.pi:
+                dist -= 2*np.pi
+            elif dist < -np.pi:
+                dist += 2*np.pi            
+            return dist
+    
     def delta_to_orientation(self, orientation):
         gripper_calibration_euler = [ 3.13,  0.14, -1.56 ]
         gripper_calibration = euler2mat(gripper_calibration_euler)
@@ -162,7 +203,6 @@ class Robot:
         log.debug("-----")
         log.debug(f"    request:    {orientation}")
         goal_mat = euler2mat(orientation)
-        # log.debug(f"    Goal Orientation [mat]: {goal_mat}")
         goal_in_world_mat = np.dot(gripper_calibration, goal_mat)
         goal_in_world_euler = mat2euler(goal_in_world_mat, axes="rxyz")
         goal_in_world_quat = mat2quat(goal_in_world_mat)
@@ -170,15 +210,7 @@ class Robot:
         current_ori = mat2euler(current_gripper_ori_mat, axes="rxyz")
         current_ori_quat = mat2quat(current_gripper_ori_mat)
         
-        def get_closest_distance(a, b):
-            dist = np.remainder(a - b, 2*np.pi)
-            if dist > np.pi:
-                dist -= 2*np.pi
-            elif dist < -np.pi:
-                dist += 2*np.pi            
-            return dist
-        
-        actual_dist =np.array([get_closest_distance(a,b) for a, b in zip(goal_in_world_euler, current_ori)])
+        actual_dist =np.array([self._get_closest_distance(a,b) for a, b in zip(goal_in_world_euler, current_ori)])
         
         dist = actual_dist
         dist[1] *= -1
@@ -252,8 +284,6 @@ class Robot:
         log.debug(f"     Left fingerpad position: {left_fingerpad_pos}")
         distance = np.linalg.norm(right_fingerpad_pos - left_fingerpad_pos)
         log.debug(f"     Distance: {distance}")
-
-
 
         if self._is_gripper_closed():
             return [0, 0, 0, 0, 0, 0, 0]

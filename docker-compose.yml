@@ -161,6 +161,22 @@ services:
     # command:  /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
   
+  robotic-grasping-server:
+    build:
+      context: ./robotic_grasping_server
+      dockerfile: Dockerfile
+    volumes:
+      - ./robotic_grasping_server:/app
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+      - ./shared:/app/shared
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=/root/.Xauthority
+    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
+    # command: poetry run python -u -m robotic_grasping_server.robotic_grasping
+    # command:  /bin/bash -c "while true; do sleep 30; done"
+    network_mode: host
+  
   ollama-server:
     image: ollama/ollama
     volumes:
@@ -195,6 +211,6 @@ services:
       - DISPLAY=${DISPLAY}
       - XAUTHORITY=/root/.Xauthority
     # command:  /bin/bash -c "while true; do sleep 30; done"
-    # command: poetry run python -u -m model_server.vlm
-    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
+    command: poetry run python -u -m model_server.hf_idefics
+    # command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
     network_mode: host

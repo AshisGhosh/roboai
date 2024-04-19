@@ -46,6 +46,14 @@ async def read_root():
 async def startup_event():
     return robosim.setup()
 
+@app.post("/get_feedback")
+async def get_feedback():
+    return await robosim.get_feedback("grasp-selection-feedback", "cereal")
+
+@app.post("/pick")
+async def pick(object_name: str):
+    return await robosim.pick(object_name)
+
 @app.post("/test")
 async def test():
     robosim.clear_tasks()
@@ -151,6 +159,18 @@ async def get_image():
     buf.seek(0)
     logging.debug("Image saved. Ready to stream.")
     return StreamingResponse(buf, media_type="image/png")
+
+@app.get("/get_image_with_markers")
+async def get_image_with_markers():
+    logging.info("Getting image with markers...")
+    img = await robosim.get_image_with_markers()
+    logging.debug("Image received.")
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    logging.debug("Image saved. Ready to stream.")
+    return StreamingResponse(buf, media_type="image/png")
+
 
 @app.post("/pause")
 async def pause():
