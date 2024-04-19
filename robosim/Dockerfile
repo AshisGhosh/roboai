@@ -1,13 +1,10 @@
 # Use an official Miniconda3 base image
-FROM continuumio/miniconda3
+FROM python:3.10-slim
 
 ARG PROJECT=robosim
-
-# Set the Python version
 ARG PYTHON_VERSION=3.10
-
-# Set the MuJoCo version
 ARG MUJOCO_VERSION=3.1.3
+ARG ENABLE_GPU=no  
 
 # Install system dependencies for evdev
 # For Debian/Ubuntu, installing generic Linux headers
@@ -21,10 +18,9 @@ RUN apt-get update && apt-get install -y \
     libgl1-mesa-glx \
     libosmesa6 
 
-# Update Conda and install pip in the base environment
-RUN conda update -n base -c defaults conda && \
-    conda create -n robot_env python=$PYTHON_VERSION pip && \
-    conda clean -afy
+RUN apt-get install -y \
+    wget
+
 
 # Download and install MuJoCo binaries (required by Robosuite)
 RUN mkdir -p /root/.mujoco && \
@@ -37,12 +33,8 @@ ENV MUJOCO_PY_MJPRO_PATH=/root/.mujoco/mujoco-${MUJOCO_VERSION}
 ENV LD_LIBRARY_PATH=/root/.mujoco/mujoco-${MUJOCO_VERSION}/bin:${LD_LIBRARY_PATH}
 
 
-# RUN apt-get update && apt-get install -y \
-#     libgl1-mesa-glx \
-#     libosmesa6
-
 # Install Robosuite
-RUN conda run -n robot_env pip install robosuite
+RUN pip install robosuite
 
 # Copy the entrypoint script into the image and make sure it's executable
 RUN mkdir -p /usr/local/bin
@@ -50,8 +42,8 @@ COPY ${PROJECT}/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 # Install Poetry
-RUN conda run -n robot_env pip install poetry
-RUN conda run -n robot_env poetry config virtualenvs.create false
+RUN pip install poetry
+RUN poetry config virtualenvs.create false
 
 # Copy only the pyproject.toml and poetry.lock* to install dependencies
 COPY ${PROJECT}/pyproject.toml ${PROJECT}/poetry.lock* /app/
@@ -59,10 +51,10 @@ COPY ${PROJECT}/pyproject.toml ${PROJECT}/poetry.lock* /app/
 WORKDIR /app
 
 # Install dependencies
-RUN conda run -n robot_env poetry install --no-dev
+RUN poetry install --no-dev
 
 COPY shared/pyproject.toml shared/poetry.lock* /app/shared/
-RUN cd /app/shared && conda run -n robot_env poetry install --no-dev
+RUN cd /app/shared && poetry install --no-dev
 
 
 # Use the entrypoint script to activate the Conda environment
