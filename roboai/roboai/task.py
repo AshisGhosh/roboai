@@ -25,6 +25,19 @@ def extract_code(raw_input, language="python"):
     code = raw_input[code_start_index:code_end_index].strip()
     return code
 
+
+def str_from_messages(messages):
+    # Extract the text from the messages, ignore images
+    text = ""
+    for m in messages:
+        if type(m["content"]) == str:
+            text += m["role"] + ": " + m["content"] + "\n"
+        else:
+            text += m["role"] + ": " + m["content"]["text"] + "\n"
+    return text
+
+
+
 class Task():
     def __init__(self, task_description, solving_agents=None, expected_output_format = None, finish_when=None):
         self.task_description = task_description
@@ -36,6 +49,12 @@ class Task():
     
     def add_solving_agent(self, agent):
         self.solving_agents.append(agent)
+    
+    @property
+    def task_description_str(self):
+        if isinstance(self.task_description, list):
+            return self.task_description[0]["text"]
+        return self.task_description
 
     def add_task_image(self, image):
         try:
@@ -114,10 +133,10 @@ class Task():
                     }
             }
         )
-        log.info(f"Task:    '{str(self.task_description)[:200]}...'")
+        log.info(f"Task:    '{self.task_description_str}'")
         for agent in self.solving_agents:
             response = self.task_chat(agent, self.chat_messages)
-            log.info(f"> AGENT '{agent.name}':     {str(response)[:200]}...")
+            log.info(f"> AGENT '{agent.name}':     {response}")
             self.chat_messages.append(
                 {
                     agent.name:
@@ -145,12 +164,12 @@ class Task():
                 message = m[next(iter(m))] 
                 agent_messages.append(message)
         
-        log.debug(f"{str(agent_messages)[:200]}...")
+        log.debug(f"{str_from_messages(agent_messages)}")
         response = agent.task_chat(agent_messages)
         return response
     
     def __str__(self):
-        task_info=f"Task: {self.task_description}"
+        task_info=f"Task: {self.task_description_str}"
         if self.expected_output_format:
             task_info += f"\n     Expected Output Format: {self.expected_output_format}"
         if self.solving_agents:

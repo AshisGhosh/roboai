@@ -8,6 +8,8 @@ from roboai.task import Task
 
 from shared.utils.robosim_client import get_objects_on_table, pick, place, get_image, get_grasp_image
 from shared.utils.model_server_client import answer_question_from_image
+import shared.utils.gradio_client as gradio
+import shared.utils.replicate_client as replicate
 
 import logging
 
@@ -33,6 +35,9 @@ def extract_code(raw_input, language="python"):
 
     end_delimiter = "```"
     code_end_index = raw_input.find(end_delimiter, code_start_index)
+    if code_end_index == -1:
+        code_end_index = len(raw_input)
+
     code = raw_input[code_start_index:code_end_index].strip()
     log.debug(f"Extracted code: \n{code}")
     return code
@@ -50,12 +55,28 @@ class RobotJob:
         '''        
 
         im = get_image()
-        output = gradio_answer_question_from_image(im, "Concisely describe the objects on the table.")
-        if "result" not in output.keys():
-            log.error("No result found.")
-            return
+        prompt = "Concisely describe the objects on the table."
+
+        task_scene = Task(
+            f"Given the following image, describe the objects on the table."
+        )
+        task_scene.add_task_image(im)
+        scene_agent = Agent(
+            name="Scene",
+            model="ollama/llava:latest",
+            system_message="""
+            You are an agent that describes the scene. Focus on the objects on the table.
+            """
+        )
+        task_scene.add_solving_agent(scene_agent)
+        output = task_scene.run()
+        # output = gradio.moondream_answer_question_from_image(im, prompt)
+        # output = replicate.moondream_answer_question_from_image(im, prompt)
+        # if "result" not in output.keys():
+        #     log.error("No result found.")
+        #     return
         
-        output = output["result"]
+        # output = output["result"]
 
         task = Task(
             f"Given the following summary, return just a list in python of the objects on the table. The table is not an object. Summary: \n{output}",
@@ -85,14 +106,15 @@ class RobotJob:
                 {list_of_objects}
                 Do not add any extra steps.
             """,
-            expected_output_format="""
-                1. pick object1
-                2. place object1
-                3. pick object2
-                4. place object2
-                5. pick object3
-                6. place object3
-            """
+            # expected_output_format="""
+            #     1. pick object1
+            #     2. place object1
+            #     3. pick object2
+            #     4. place object2
+            #     5. pick object3
+            #     6. place object3
+            # """
+            expected_output_format="A numbered list of steps constrained to the provided functions."
         )
         plan_task.register_tool(
             name="pick",
@@ -156,7 +178,8 @@ class RobotJob:
             )
             coder_agent = Agent(
                 name="Coder",
-                model="ollama/gemma:7b",
+                # model="ollama/gemma:7b",
+                model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
                 system_message="""
                 You are a coder that writes concise and exact code to execute the plan.
                 Use only the provided functions.

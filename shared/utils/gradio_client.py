@@ -4,25 +4,48 @@ import io
 import base64
 import gradio_client
 from gradio_client import Client
+import time
 
 
-def gradio_answer_question_from_image(image: Image, question: str) -> Dict[str, Any]:
+def moondream_answer_question_from_image(image: Image, question: str) -> Dict[str, Any]:
     client = Client("vikhyatk/moondream2")
-    # result = client.predict(
-    #         "https://raw.githubusercontent.com/gradio-app/gradio/main/test/test_files/bus.png",	# filepath  in 'Upload an Image' Image component
-    #         "Hello!!",	# str  in 'Input' Textbox component
-    #         api_name="/answer_question"
-    # )
-    # image_byte_array = io.BytesIO()
-    # image.save(image_byte_array, format="JPEG")
-    # image_byte_array = image_byte_array.getvalue()
-    # image = base64.b64encode(image_byte_array).decode("utf-8")
+    # client = Client("Kartik2503/ImageToText")
+
     image.save("/app/shared/data/tmp.png")
     
+    start_time = time.time()
     result = client.predict(
         gradio_client.file("/app/shared/data/tmp.png"),
         question,
         api_name="/answer_question"
     )
-    print(result)
+    print(f"[Gradio] Time taken: {time.time() - start_time}")
+    return {"result": result}
+
+def qwen_vl_max_answer_question_from_image(image: Image, question: str) -> Dict[str, Any]:
+    client = Client("https://qwen-qwen-vl-max.hf.space/--replicas/fi9fr/")
+
+    image.save("/app/shared/data/tmp.png")
+    img_path = "/app/shared/data/tmp.png"
+    start_time = time.time()
+    # result = client.predict(
+	# 	fn_index=3
+    # )
+
+    # json_str = "/tmp/gradio/tmp0af5pyui.json"
+    # result = client.predict(
+	# 	json_str,
+	# 	img_path,	# str (filepath on your computer (or URL) of file) in '📁 Upload (上传文件)' Uploadbutton component
+	# 	fn_index=5
+    # )
+
+    json_str="/tmp/gradio/tmpp4n2qjo0.json"
+    result = client.predict(
+        # json_str,
+        # "Hi",
+        fn_index=2
+    )
+
+    
+    print(f"[Gradio] Time taken: {time.time() - start_time}")
     return {"result": result}
