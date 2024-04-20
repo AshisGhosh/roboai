@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+
+"""Run robot simulations to generate images and collect metadata.
+
+This script automates the process of running robot simulations to generate images & collect metadata
+about the objects in the simulated environment. It interacts with a server to start, run, and close
+simulations, fetch images, and retrieve object details. The script saves the images and metadata
+for each simulation run and aggregates the metadata into a single JSON file.
+
+Usage:
+    python3 robot_simulation.py [-n RUNS] [-d]
+
+Arguments:
+    -n, --runs (optional): Number of simulation runs to perform (default: 50).
+    -d, --disable_mirror (optional): Disable mirroring of images.
+
+The script creates a directory for each batch of simulation runs, named with a timestamp. Inside
+each directory, it saves images generated during the simulations and metadata about the objects
+detected in those images. The metadata includes information such as object names, poses, and
+quaternions. Also, the script records the start time and duration of the batch of simulations
+and includes this information in the aggregated metadata.
+
+The run information is saved in a JSON file named after the directory where the images are stored.
+"""
+
+
+import datetime
+import hashlib
+import json
+import os
+import requests
+from PIL import Image
+import argparse
+
+def start_simulation(sim_number):
+    print(f"[Sim {sim_number}] Starting the simulation...")
+    response = requests.post("http://localhost:8000/start")
+    if response.ok:
+        print(f"[Sim {sim_number}] Simulation started successfully.")
+        return datetime.datetime.now().timestamp()  # Record the start time using datetime
+    else:
+        print(f"[Sim {sim_number}] Failed to start simulation.")
+    return None
+
+def close_simulation(sim_number, start_time):
+    print(f"[Sim {sim_number}] Closing the simulation...")
+    response = requests.post("http://localhost:8000/close")
+    if response.ok:
+        end_time = datetime.datetime.now().timestamp()  # Record the end time using datetime
+        print(f"[Sim {sim_number}] Simulation closed successfully.")
+        return end_time - start_time  # Return the time taken for the simulation
+    else:
+        print(f"[Sim {sim_number}] Failed to close simulation.")
+    return None
+
+def get_image(sim_number, image_path):
+    print(f"[Sim {sim_number}] Fetching image to save at {image_path}...")
+    response = requests.get("http://localhost:8000/get_image")
+    if response.ok:
+        with open(image_path, "wb") as f:
+            f.write(response.content)
+        print(f"[Sim {sim_number}] Image fetched and saved successfully.")
+        return True
+    print(f"[Sim {sim_number}] Failed to fetch image.")
+    return False
+
+def create_base_folder():
+    expected_directory = "roboai"
+    image_exports_folder = "image_exports"
+
+    # Get the realpath of the directory containing the script
+    script_directory = os.path.dirname(os.path.realpath(__file__))
+
+    print("Script Directory:", script_directory)
+
+    # Get the parent directory name directly
+    parent_directory = os.path.basename(os.path.abspath(script_directory))
+    print("Parent Directory:", parent_directory)
+
+    # Check if the script is located within the expected directory
+    if parent_directory != expected_directory:
+        raise RuntimeError(f"This script should be located within the '{expected_directory}' directory.")
+
+    # Construct the base directory path relative to the script's location
+    base_directory = os.path.join(script_directory, image_exports_folder)
+
+    # Create the base directory if it doesn't exist
+    if not os.path.exists(base_directory):
+        os.makedirs(base_directory)
+        print(f"Base directory created at {base_directory}")
+
+    # Create a subdirectory for this run using the current timestamp
+    folder_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = os.path.join(base_directory, folder_name)
+    os.makedirs(path, exist_ok=True)
+    print(f"Created directory for this run: {path}")
+
+    return path, folder_name
+
+def flip_images(sim_number, directory, filename):
+    print(f"[Sim {sim_number}] Flipping image {filename}...")
+    image_path = os.path.join(directory, filename)
+    img = Image.open(image_path)
+    img_flipped = img.transpose(Image.FLIP_LEFT_RIGHT)
+    flipped_filename = f"{filename.split('.')[0]}_flipped.png"
+    img_flipped.save(os.path.join(directory, flipped_filename))
+    print(f"[Sim {sim_number}] Image flipping complete.")
+
+def get_metadata(sim_number, image_filename):
+    print(f"[Sim {sim_number}] Fetching object details and generating metadata...")
+    response = requests.get("http://localhost:8000/get_object_details")
+    if response.ok:
+        metadata = response.json()
+        # Check if metadata is a list and not empty
+        if isinstance(metadata, list) and metadata:
+            # Append image_filename to the last dictionary in the list
+            metadata[-1]["image_file"] = image_filename
+            return metadata
+    print(f"[Sim {sim_number}] Failed to fetch object details or empty metadata.")
+    return None
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Run robot simulations to generate and optionally mirror images.")
+    parser.add_argument("-n", "--runs", type=int, default=50, help="Number of simulation runs (default: 50)")
+    parser.add_argument("-d", "--disable_mirror", action="store_true", help="Disable mirroring of images")
+    return parser.parse_args()
+
+def format_timestamp(unix_time):
+    """Converts UNIX timestamp to a human-readable format."""
+    return datetime.datetime.fromtimestamp(unix_time).strftime("%Y-%m-%d %H:%M:%S")
+
+def generate_unique_id(batch_start_time):
+    """Generates a unique ID based on the batch start time."""
+    unique_string = f"batch_{batch_start_time}"
+    return hashlib.sha256(unique_string.encode()).hexdigest()
+
+def construct_json_output(run_info, num_simulations, disable_mirror, batch_start_time, batch_end_time):
+    """Construct the final JSON output containing all runs and batch information."""
+    batch_duration = batch_end_time - batch_start_time
+    batch_info = {
+        "uid": generate_unique_id(batch_start_time),
+        "runs": num_simulations,
+        "disable_mirror": disable_mirror,
+        "batch_start_time": format_timestamp(batch_start_time),
+        "batch_end_time": format_timestamp(batch_end_time),
+        "duration": batch_duration
+    }
+    return {
+        "batch_info": batch_info,
+        "runs": run_info
+    }
+
+def main():
+    args = parse_arguments()
+    num_simulations = args.runs
+    disable_mirror = args.disable_mirror
+    base_folder, folder_name = create_base_folder()
+
+    batch_start_time = datetime.datetime.now().timestamp()  # Record batch start time using datetime
+    run_info = []  # List to store metadata for each run
+
+    for sim_number in range(1, num_simulations + 1):
+        start_time = start_simulation(sim_number)
+        if start_time:
+            image_filename = f"{sim_number:02}.png"
+            image_path = os.path.join(base_folder, image_filename)
+            if get_image(sim_number, image_path):
+                if not disable_mirror:
+                    flip_images(sim_number, base_folder, image_filename)
+                metadata = get_metadata(sim_number, image_filename)
+                if metadata:
+                    run_info.append({
+                        "run": sim_number,
+                        "image_file": image_filename,
+                        "objects": metadata
+                    })
+            time_taken = close_simulation(sim_number, start_time)
+            if time_taken:
+                print(f"[Sim {sim_number}] Time taken for simulation: {time_taken:.2f} seconds")
+
+    batch_end_time = datetime.datetime.now().timestamp()  # Record batch end time using datetime
+
+    final_output = construct_json_output(run_info, num_simulations, disable_mirror, batch_start_time, batch_end_time)
+
+    # Save final_output to a JSON file in the batch folder
+    json_filename = os.path.join(base_folder, f"{folder_name}.json")
+    with open(json_filename, "w") as f:
+        json.dump(final_output, f, indent=4)
+    print(f"Run info saved to {json_filename}")
+
+if __name__ == "__main__":
+    main()
