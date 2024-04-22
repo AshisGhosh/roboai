@@ -28,35 +28,38 @@ import datetime
 import hashlib
 import json
 import os
-import requests
+import httpx
 from PIL import Image
 import argparse
 
 def start_simulation(sim_number):
     print(f"[Sim {sim_number}] Starting the simulation...")
-    response = requests.post("http://localhost:8000/start")
-    if response.ok:
+    with httpx.Client() as client:
+        response = client.post("http://localhost:8000/start")
+    if response.is_success:
         print(f"[Sim {sim_number}] Simulation started successfully.")
-        return datetime.datetime.now().timestamp()  # Record the start time using datetime
+        return datetime.datetime.now().timestamp()
     else:
         print(f"[Sim {sim_number}] Failed to start simulation.")
     return None
 
 def close_simulation(sim_number, start_time):
     print(f"[Sim {sim_number}] Closing the simulation...")
-    response = requests.post("http://localhost:8000/close")
-    if response.ok:
-        end_time = datetime.datetime.now().timestamp()  # Record the end time using datetime
+    with httpx.Client() as client:
+        response = client.post("http://localhost:8000/close")
+    if response.is_success:
+        end_time = datetime.datetime.now().timestamp()
         print(f"[Sim {sim_number}] Simulation closed successfully.")
-        return end_time - start_time  # Return the time taken for the simulation
+        return end_time - start_time
     else:
         print(f"[Sim {sim_number}] Failed to close simulation.")
     return None
 
 def get_image(sim_number, image_path):
     print(f"[Sim {sim_number}] Fetching image to save at {image_path}...")
-    response = requests.get("http://localhost:8000/get_image")
-    if response.ok:
+    with httpx.Client() as client:
+        response = client.get("http://localhost:8000/get_image")
+    if response.is_success:
         with open(image_path, "wb") as f:
             f.write(response.content)
         print(f"[Sim {sim_number}] Image fetched and saved successfully.")
@@ -65,24 +68,24 @@ def get_image(sim_number, image_path):
     return False
 
 def create_base_folder():
-    expected_directory = "roboai"
+    expected_path = "roboai/shared"
     image_exports_folder = "image_exports"
 
     # Get the realpath of the directory containing the script
     script_directory = os.path.dirname(os.path.realpath(__file__))
-
     print("Script Directory:", script_directory)
 
-    # Get the parent directory name directly
-    parent_directory = os.path.basename(os.path.abspath(script_directory))
-    print("Parent Directory:", parent_directory)
+    # Construct the expected absolute path to the "shared" directory
+    script_root = os.path.join(os.path.dirname(script_directory), '..')
+    expected_absolute_path = os.path.abspath(os.path.join(script_root, expected_path))
+    print("Expected Absolute Path:", expected_absolute_path)
 
-    # Check if the script is located within the expected directory
-    if parent_directory != expected_directory:
-        raise RuntimeError(f"This script should be located within the '{expected_directory}' directory.")
+    # Verify the script is in the expected directory
+    if not script_directory == expected_absolute_path:
+        raise RuntimeError(f"This script should be located in '{expected_path}', but is in '{script_directory}'.")
 
-    # Construct the base directory path relative to the script's location
-    base_directory = os.path.join(script_directory, image_exports_folder)
+    # Construct the base directory path for image exports
+    base_directory = os.path.join(script_root, image_exports_folder)
 
     # Create the base directory if it doesn't exist
     if not os.path.exists(base_directory):
@@ -108,12 +111,11 @@ def flip_images(sim_number, directory, filename):
 
 def get_metadata(sim_number, image_filename):
     print(f"[Sim {sim_number}] Fetching object details and generating metadata...")
-    response = requests.get("http://localhost:8000/get_object_details")
-    if response.ok:
+    with httpx.Client() as client:
+        response = client.get("http://localhost:8000/get_object_details")
+    if response.is_success:
         metadata = response.json()
-        # Check if metadata is a list and not empty
         if isinstance(metadata, list) and metadata:
-            # Append image_filename to the last dictionary in the list
             metadata[-1]["image_file"] = image_filename
             return metadata
     print(f"[Sim {sim_number}] Failed to fetch object details or empty metadata.")
