@@ -88,18 +88,20 @@ def get_image(sim_number, image_path):
 
 def create_base_folder():
     script_directory = os.path.dirname(os.path.realpath(__file__))
-    if not script_directory.endswith('roboai/shared'):
-        raise RuntimeError(f"This script should be run from a 'roboai/shared' directory, but is in '{script_directory}'.")
-    roboai_directory = os.path.abspath(os.path.join(script_directory, '..'))
-    image_exports_directory = os.path.join(roboai_directory, 'image_exports')
+    expected_directory_suffix = 'roboai/shared'  
+    if not script_directory.endswith(expected_directory_suffix):
+        raise RuntimeError(f"This script should be run from a directory ending with '{expected_directory_suffix}', but is running from '{script_directory}'.")
+    image_exports_directory = os.path.join(script_directory, 'data', 'image_exports')
     if not os.path.exists(image_exports_directory):
         os.makedirs(image_exports_directory)
         print(f"Image exports directory created at {image_exports_directory}")
+    # Create a specific directory for this run based on the current timestamp
     folder_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_directory = os.path.join(image_exports_directory, folder_name)
     os.makedirs(run_directory, exist_ok=True)
     print(f"Created directory for this run: {run_directory}")
     return run_directory, folder_name
+
 
 def flip_images(sim_number, directory, filename):
     print(f"[Sim {sim_number}] Flipping image {filename}...")

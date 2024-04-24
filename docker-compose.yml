@@ -139,7 +139,7 @@ services:
       - DISPLAY=${DISPLAY}
       - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
-    command: python -u -m roboai.roboai
+    command: /bin/bash -c "ls /app/shared/data/image_exports && python -u -m roboai.parse_images"
     # command:  /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
   
