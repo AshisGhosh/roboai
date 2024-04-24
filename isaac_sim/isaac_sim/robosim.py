@@ -26,7 +26,7 @@ class SimManager:
         self.sim = None
         self.assets_root_path = None
         self.world = None
-        self.camera = None
+        self.cameras = {}
         self.robot_actor = None
         self.task_manager = None
     
@@ -112,7 +112,14 @@ class SimManager:
         stage.add_reference_to_stage(
             self.assets_root_path + FRANKA_USD_PATH, FRANKA_STAGE_PATH
         )
-        self.world.scene.add(Franka(prim_path=FRANKA_STAGE_PATH, name="franka"))
+        self.world.scene.add(
+                Franka(
+                    prim_path=FRANKA_STAGE_PATH, 
+                    name="franka",
+                    position=np.array([0, -0.64, 0]),
+                    orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 0, 1), 90))
+                )
+            )
         carb.log_warn(f"Time taken to create Franka: {time.time() - start_time} seconds")
         self.sim.update()
     
@@ -192,13 +199,28 @@ class SimManager:
         carb.log_warn(f"{REALSENSE_VIEWPORT_NAME} docked in {viewport.title}: {rs_viewport.docked}")
 
         from omni.isaac.sensor import Camera
-        self.camera = Camera(
+        self.cameras["realsense"] = Camera(
             prim_path=CAMERA_PRIM_PATH,
+            name="realsense",
             resolution=(640, 480),
             )
 
+        camera_rot = Gf.Rotation(Gf.Vec3d(0, 0, 1), -90) * Gf.Rotation(Gf.Vec3d(1, 0, 0), 45)
+        self.cameras["agentview"] = Camera(
+            prim_path="/World/camera",
+            name="agentview",
+            resolution=(1024, 768),
+            position=(0, 2.75, 2.67),
+            orientation=rotations.gf_rotation_to_np_array(camera_rot)
+            )        
+        # self.cameras["agentview"].set_world_pose(
+        #     position=(0, 2.75, 2.67),
+        #     orientation=(0.00061, 0.0032, 0.38051, 0.92477)
+        # )
+        
         self.world.reset()
-        self.camera.initialize()
+        for cam in self.cameras.values():
+            cam.initialize()
     
     def close_sim(self):
         self.sim.close()       
@@ -213,10 +235,11 @@ class SimManager:
                 self.task_manager.do_tasks()
             self.sim.update()
     
-    def get_image(self, visualize=False):
+    def get_image(self, camera_name="realsense", visualize=False):
         self.world.step(render=True)
+        camera = self.cameras[camera_name]
         try: 
-            img =  self.camera.get_rgba()
+            img =  camera.get_rgba()
             if visualize:
                 import cv2
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
