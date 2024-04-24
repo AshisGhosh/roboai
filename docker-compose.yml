@@ -247,7 +247,10 @@ services:
     network_mode: host
 
   isaac-sim:
-    image: nvcr.io/nvidia/isaac-sim:2023.1.1
+    # image: nvcr.io/nvidia/isaac-sim:2023.1.1
+    build:
+      context: .
+      dockerfile: ./isaac_sim/Dockerfile
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
@@ -259,13 +262,46 @@ services:
       - ~/docker/isaac-sim/logs:/root/.nvidia-omniverse/logs:rw
       - ~/docker/isaac-sim/data:/root/.local/share/ov/data:rw
       - ~/docker/isaac-sim/documents:/root/Documents:rw
-      - ./isaac_sim:/isaac-sim/roboai/
+      - ./isaac_sim/isaac_sim:/isaac-sim/roboai/
     environment:
       - DISPLAY=${DISPLAY}
       - XAUTHORITY=/root/.Xauthority
       - ACCEPT_EULA=Y
       - PRIVACY_CONSENT=Y
     entrypoint: /bin/bash -c "while true; do sleep 30; done"
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+  isaac-sim-server:
+    build:
+      context: .
+      dockerfile: ./isaac_sim/Dockerfile
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix
+      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+      - ~/docker/isaac-sim/cache/kit:/isaac-sim/kit/cache:rw
+      - ~/docker/isaac-sim/cache/ov:/root/.cache/ov:rw
+      - ~/docker/isaac-sim/cache/pip:/root/.cache/pip:rw
+      - ~/docker/isaac-sim/cache/glcache:/root/.cache/nvidia/GLCache:rw
+      - ~/docker/isaac-sim/cache/computecache:/root/.nv/ComputeCache:rw
+      - ~/docker/isaac-sim/logs:/root/.nvidia-omniverse/logs:rw
+      - ~/docker/isaac-sim/data:/root/.local/share/ov/data:rw
+      - ~/docker/isaac-sim/documents:/root/Documents:rw
+      - ./isaac_sim/isaac_sim:/isaac-sim/roboai/
+      - ./isaac_sim/app:/isaac-sim/app
+    environment:
+      - DISPLAY=${DISPLAY}
+      - XAUTHORITY=/root/.Xauthority
+      - ACCEPT_EULA=Y
+      - PRIVACY_CONSENT=Y
+    entrypoint: /bin/bash -c "while true; do sleep 30; done"
+    # command: ./python.sh -u -m uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
     network_mode: host
     deploy:
       resources:
