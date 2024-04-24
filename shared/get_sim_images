@@ -31,6 +31,25 @@ import os
 import httpx
 from PIL import Image
 import argparse
+import trimesh
+import numpy as np
+
+# Base path to the data directory containing STL files
+BASE_DATA_PATH = os.path.join(os.path.dirname(__file__), 'data')
+
+# Dictionary mapping object names to STL filenames
+stl_files = {
+    "Bread": "bread.stl",
+    "Cereal": "cereal.stl",
+    "Milk": "milk.stl",
+    "Can": "can.stl"
+}
+
+# Preload meshes
+meshes = {
+    name: trimesh.load(os.path.join(BASE_DATA_PATH, filename))
+    for name, filename in stl_files.items()
+}
 
 def start_simulation(sim_number):
     print(f"[Sim {sim_number}] Starting the simulation...")
@@ -80,7 +99,6 @@ def create_base_folder():
     run_directory = os.path.join(image_exports_directory, folder_name)
     os.makedirs(run_directory, exist_ok=True)
     print(f"Created directory for this run: {run_directory}")
-
     return run_directory, folder_name
 
 def flip_images(sim_number, directory, filename):
@@ -92,17 +110,45 @@ def flip_images(sim_number, directory, filename):
     img_flipped.save(os.path.join(directory, flipped_filename))
     print(f"[Sim {sim_number}] Image flipping complete.")
 
-def get_metadata(sim_number, image_filename):
+def apply_transformation(object_name, position, quaternion, size):
+    """Apply transformation and scale to a preloaded mesh and return the transformed mesh."""
+    # Load the mesh
+    mesh = meshes[object_name].copy()
+    # Scale the mesh
+    mesh.apply_scale(size)
+    # Apply transformation
+    transformation_matrix = trimesh.transformations.quaternion_matrix(quaternion)
+    transformation_matrix[:3, 3] = position
+    mesh.apply_transform(transformation_matrix)
+    return mesh
+
+import trimesh
+
+def get_metadata(sim_number):
     print(f"[Sim {sim_number}] Fetching object details and generating metadata...")
     with httpx.Client() as client:
         response = client.get("http://localhost:8000/get_object_details")
+    
     if response.is_success:
-        metadata = response.json()
-        if isinstance(metadata, list) and metadata:
-            metadata[-1]["image_file"] = image_filename
-            return metadata
+        objects = response.json()
+        if isinstance(objects, list) and objects:
+            transformed_meshes = {}
+            for obj in objects:
+                transformed_mesh = apply_transformation(obj['name'], obj['pose'], obj['quaternion'], obj['size'])
+                transformed_meshes[obj['name']] = transformed_mesh  # Assign directly
+
+            for obj in objects:
+                obj['distances'] = {}
+                for other_obj in objects:
+                    if obj['name'] != other_obj['name']:
+                        # Evenly sample points on the surface of other_obj mesh; 500 samples should be fine for low-poly .stl's
+                        points_sampled, _ = trimesh.sample.sample_surface_even(transformed_meshes[other_obj['name']], 500)
+                        # Directly calculate the minimum distance and store it
+                        obj['distances'][other_obj['name']] = trimesh.proximity.closest_point(transformed_meshes[obj['name']], points_sampled)[1].min()
+            return objects
     print(f"[Sim {sim_number}] Failed to fetch object details or empty metadata.")
     return None
+
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run robot simulations to generate and optionally mirror images.")
@@ -152,7 +198,7 @@ def main():
             if get_image(sim_number, image_path):
                 if not disable_mirror:
                     flip_images(sim_number, base_folder, image_filename)
-                metadata = get_metadata(sim_number, image_filename)
+                metadata = get_metadata(sim_number)
                 if metadata:
                     run_info.append({
                         "run": sim_number,

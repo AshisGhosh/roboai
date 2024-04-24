@@ -428,23 +428,6 @@ class RoboSim:
             quat = self.env.sim.data.get_body_xquat(obj.root_body).tolist()
             size = self.env.sim.model.geom_size[geom_id].tolist()
 
-            # Assuming nlight is the number of lights and light_pos is available
-            light_sources = [{
-                "position": self.env.sim.model.light_pos[i].tolist()
-            } for i in range(self.env.sim.model.nlight)] if 'light_pos' in dir(self.env.sim.model) and hasattr(self.env.sim.model, 'nlight') else []
-
-            # Physics properties
-            mass = self.env.sim.model.body_mass[body_id]
-            friction_coeffs = self.env.sim.model.geom_friction[geom_id].tolist()
-            # contacts = self.env.sim.data.contact
-            # contact_details = [
-            #     {
-            #         "contact_with": self.env.sim.model.geom_id2name(c.geom2 if c.geom1 == geom_id else c.geom1),
-            #         "force": np.sum(np.square(c.frame[:3]))**0.5  # Magnitude of the contact force vector
-            #     }
-            #     for c in contacts if c.geom1 == geom_id or c.geom2 == geom_id
-            # ]
-
             details.append({
                 "name": obj.name,
                 "body_id": body_id,
@@ -452,10 +435,6 @@ class RoboSim:
                 "pose": pose,
                 "quaternion": quat,
                 "size": size,
-                "light_sources": light_sources,
-                "mass": mass,
-                "friction": friction_coeffs,
-                # "contacts": contact_details
             })
 
         return details
