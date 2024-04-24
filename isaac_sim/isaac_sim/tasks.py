@@ -35,7 +35,6 @@ class Task:
 class TaskManager:
     def __init__(self, robot_actor):
         self.robot_actor = robot_actor
-        self.planner = Planner(robot_actor)
         self.tasks = []
         self._current_task = None
         self.status = TaskManagerStatus.PENDING

@@ -70,7 +70,7 @@ class SimManager:
         articulation_controller = franka.get_articulation_controller()
 
         self.robot_actor = RobotActor(world=self.world, robot=franka, controller=controller, articulator=articulation_controller)
-        self.task_manager = TaskManager(self, robot_actor=self.robot_actor)
+        self.task_manager = TaskManager(robot_actor=self.robot_actor)
         self.planner = Planner(self, robot_actor=self.robot_actor)
 
     def _do_imports(self):
