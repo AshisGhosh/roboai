@@ -112,43 +112,49 @@ def flip_images(sim_number, directory, filename):
 
 def apply_transformation(object_name, position, quaternion, size):
     """Apply transformation and scale to a preloaded mesh and return the transformed mesh."""
-    # Load the mesh
     mesh = meshes[object_name].copy()
-    # Scale the mesh
     mesh.apply_scale(size)
-    # Apply transformation
     transformation_matrix = trimesh.transformations.quaternion_matrix(quaternion)
     transformation_matrix[:3, 3] = position
     mesh.apply_transform(transformation_matrix)
     return mesh
 
-import trimesh
-
 def get_metadata(sim_number):
+    """Calls for object position information and then uses raytracing to get distances between objects"""
     print(f"[Sim {sim_number}] Fetching object details and generating metadata...")
     with httpx.Client() as client:
         response = client.get("http://localhost:8000/get_object_details")
     
-    if response.is_success:
-        objects = response.json()
-        if isinstance(objects, list) and objects:
-            transformed_meshes = {}
-            for obj in objects:
-                transformed_mesh = apply_transformation(obj['name'], obj['pose'], obj['quaternion'], obj['size'])
-                transformed_meshes[obj['name']] = transformed_mesh  # Assign directly
+    if not response.is_success:
+        print(f"[Sim {sim_number}] Failed to fetch object details or empty metadata.")
+        return None
 
-            for obj in objects:
-                obj['distances'] = {}
-                for other_obj in objects:
-                    if obj['name'] != other_obj['name']:
-                        # Evenly sample points on the surface of other_obj mesh; 500 samples should be fine for low-poly .stl's
-                        points_sampled, _ = trimesh.sample.sample_surface_even(transformed_meshes[other_obj['name']], 500)
-                        # Directly calculate the minimum distance and store it
-                        obj['distances'][other_obj['name']] = trimesh.proximity.closest_point(transformed_meshes[obj['name']], points_sampled)[1].min()
-            return objects
-    print(f"[Sim {sim_number}] Failed to fetch object details or empty metadata.")
-    return None
+    objects = response.json()
+    if not objects:
+        return None
 
+    transformed_meshes = {}
+    for obj in objects:
+        transformed_meshes[obj['name']] = apply_transformation(obj['name'], obj['pose'], obj['quaternion'], obj['size'])
+
+    for obj in objects:
+        obj['distances'] = {}
+        origin_mesh = transformed_meshes[obj['name']]
+        for other_obj in objects:
+            if obj['name'] == other_obj['name']:
+                continue
+            target_mesh = transformed_meshes[other_obj['name']]
+            origins = np.array(origin_mesh.vertices)
+            directions = target_mesh.centroid - origins
+            directions /= np.linalg.norm(directions, axis=1)[:, np.newaxis]
+
+            intersector = trimesh.ray.ray_triangle.RayMeshIntersector(target_mesh)
+            intersections = intersector.intersects_location(origins, directions)
+            distances = np.linalg.norm(intersections[0] - origins[intersections[1]], axis=1) if intersections[0].size > 0 else np.inf
+
+            obj['distances'][other_obj['name']] = distances.min() if distances.size > 0 else np.inf
+
+    return objects
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run robot simulations to generate and optionally mirror images.")
