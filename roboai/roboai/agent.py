@@ -13,6 +13,21 @@ log.setLevel(logging.INFO)
 
 # litellm.success_callback = ["langfuse"]
 
+def get_caption(caption_json):
+    response = litellm.completion(
+        "model": "openrouter/huggingfaceh4/zephyr-7b-beta:free",
+        "messages": [
+            {
+                "role": "system",
+                "content": "You are a "
+            },
+            {
+                "role": "user",
+                "content": f"Generate caption based on {caption_json}"
+            }
+        ]
+    )
+
 
 class Agent:
     def __init__(self, name, model, system_message="", base_url=None):
