@@ -68,37 +68,20 @@ def get_image(sim_number, image_path):
     return False
 
 def create_base_folder():
-    expected_path = "roboai/shared"
-    image_exports_folder = "image_exports"
-
-    # Get the realpath of the directory containing the script
     script_directory = os.path.dirname(os.path.realpath(__file__))
-    print("Script Directory:", script_directory)
-
-    # Construct the expected absolute path to the "shared" directory
-    script_root = os.path.join(os.path.dirname(script_directory), '..')
-    expected_absolute_path = os.path.abspath(os.path.join(script_root, expected_path))
-    print("Expected Absolute Path:", expected_absolute_path)
-
-    # Verify the script is in the expected directory
-    if not script_directory == expected_absolute_path:
-        raise RuntimeError(f"This script should be located in '{expected_path}', but is in '{script_directory}'.")
-
-    # Construct the base directory path for image exports
-    base_directory = os.path.join(script_root, image_exports_folder)
-
-    # Create the base directory if it doesn't exist
-    if not os.path.exists(base_directory):
-        os.makedirs(base_directory)
-        print(f"Base directory created at {base_directory}")
-
-    # Create a subdirectory for this run using the current timestamp
+    if not script_directory.endswith('roboai/shared'):
+        raise RuntimeError(f"This script should be run from a 'roboai/shared' directory, but is in '{script_directory}'.")
+    roboai_directory = os.path.abspath(os.path.join(script_directory, '..'))
+    image_exports_directory = os.path.join(roboai_directory, 'image_exports')
+    if not os.path.exists(image_exports_directory):
+        os.makedirs(image_exports_directory)
+        print(f"Image exports directory created at {image_exports_directory}")
     folder_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = os.path.join(base_directory, folder_name)
-    os.makedirs(path, exist_ok=True)
-    print(f"Created directory for this run: {path}")
+    run_directory = os.path.join(image_exports_directory, folder_name)
+    os.makedirs(run_directory, exist_ok=True)
+    print(f"Created directory for this run: {run_directory}")
 
-    return path, folder_name
+    return run_directory, folder_name
 
 def flip_images(sim_number, directory, filename):
     print(f"[Sim {sim_number}] Flipping image {filename}...")
