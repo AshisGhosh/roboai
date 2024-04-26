@@ -45,4 +45,4 @@ Currently focused on free models hosted on [openrouter.ai](https://openrouter.ai
 
 VLMs are an extremely fast changing space. Current work is focused on:
 * [moondream2](https://huggingface.co/vikhyatk/moondream2)
-* [VILA-2.7b] (https://huggingface.co/Efficient-Large-Model/VILA-2.7b) -- inference running on a Jetson Orin Nano (not in this repo) using [NanoLLM](https://dusty-nv.github.io/NanoLLM/index.html)
+* [VILA-2.7b](https://huggingface.co/Efficient-Large-Model/VILA-2.7b) -- inference running on a Jetson Orin Nano (not in this repo) using [NanoLLM](https://dusty-nv.github.io/NanoLLM/index.html)
