@@ -103,8 +103,8 @@ class RoboSim:
             render_camera="frontview",
             # render_camera="robot0_eye_in_hand",
             camera_names=["frontview", "agentview", "robot0_eye_in_hand"],
-            camera_heights=[672, 672, 480],
-            camera_widths=[672, 672, 640],
+            camera_heights=[672, 336, 480],
+            camera_widths=[672, 336, 640],
             camera_depths=[False, False, True],  # set to true for using depth sensor
             has_offscreen_renderer=True,
             use_object_obs=False,                  

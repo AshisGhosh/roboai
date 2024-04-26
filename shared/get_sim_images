@@ -100,8 +100,13 @@ def create_base_folder():
     run_directory = os.path.join(image_exports_directory, folder_name)
     os.makedirs(run_directory, exist_ok=True)
     print(f"Created directory for this run: {run_directory}")
+    # Update the 'latest' symlink to point to the newly created folder
+    latest_symlink_path = os.path.join(image_exports_directory, 'latest')
+    if os.path.lexists(latest_symlink_path):
+        os.unlink(latest_symlink_path)  # Remove existing symlink if it exists
+    os.symlink(folder_name, latest_symlink_path)  # Create new symlink
+    print(f"Updated 'latest' symlink to point to: {folder_name}")
     return run_directory, folder_name
-
 
 def flip_images(sim_number, directory, filename):
     print(f"[Sim {sim_number}] Flipping image {filename}...")
