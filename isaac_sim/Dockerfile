@@ -15,3 +15,9 @@ RUN apt-get update && apt-get install -y \
 
 RUN ./python.sh -m pip install \
         opencv-python
+
+# Dependencies for /shared
+RUN ./python.sh -m pip install \
+        httpx \
+        pillow \
+        litellm

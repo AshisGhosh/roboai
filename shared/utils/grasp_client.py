@@ -6,7 +6,7 @@ from shared.utils.http_client import get_request, post_request
 from typing import Any, Dict, Optional
 from PIL import Image
 
-SERVER_NAME = "http://localhost:8001"
+SERVER_NAME = "http://localhost:8005"
 
 async def _get_grasp_from_image(image: Image) -> Dict[str, Any]:
     timeout = 30.0

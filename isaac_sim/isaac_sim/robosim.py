@@ -70,8 +70,8 @@ class SimManager:
         articulation_controller = franka.get_articulation_controller()
 
         self.robot_actor = RobotActor(world=self.world, robot=franka, controller=controller, articulator=articulation_controller)
-        self.task_manager = TaskManager(robot_actor=self.robot_actor)
-        self.planner = Planner(self, robot_actor=self.robot_actor)
+        self.task_manager = TaskManager(sim_manager=self, robot_actor=self.robot_actor)
+        self.planner = Planner(sim_manager=self, robot_actor=self.robot_actor)
 
     def _do_imports(self):
         global World, Robot, Franka, nucleus, stage, prims, rotations, viewports, Gf, UsdGeom, ArticulationMotionPolicy, RMPFlowController
@@ -235,11 +235,14 @@ class SimManager:
                 self.task_manager.do_tasks()
             self.sim.update()
     
-    def get_image(self, camera_name="realsense", visualize=False):
+    def get_image(self, camera_name="realsense", rgba=False, visualize=False):
         self.world.step(render=True)
         camera = self.cameras[camera_name]
-        try: 
-            img =  camera.get_rgba()
+        try:
+            if rgba: 
+                img =  camera.get_rgba()
+            else:
+                img = camera.get_rgb()
             if visualize:
                 import cv2
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)

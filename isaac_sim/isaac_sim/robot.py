@@ -114,3 +114,10 @@ class RobotActor:
         if self.__goal_pos is None:
             self.__goal_pos = pos + rel_pos
         return self.move_pos(self.__goal_pos)
+    
+    def move_to_preset(self, preset_name="pick_center"):
+        robot_presets = {
+            "pick_center": (np.array([0.0, -0.25, 0.7]), np.array([0.0, -0.707, 0.707, 0.0])),
+        }
+        pos, ori = robot_presets[preset_name]
+        return self.move(pos, ori)

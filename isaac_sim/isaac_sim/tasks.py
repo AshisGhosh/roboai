@@ -33,7 +33,8 @@ class Task:
         return f"Task: {self.name}\n    Function: {self.function}\n    Args: {self.args}\n    Kwargs: {self.kwargs}"
 
 class TaskManager:
-    def __init__(self, robot_actor):
+    def __init__(self, sim_manager, robot_actor):
+        self.sim_manager = sim_manager
         self.robot_actor = robot_actor
         self.tasks = []
         self._current_task = None
@@ -49,6 +50,16 @@ class TaskManager:
                 self.status = TaskManagerStatus.COMPLETED
                 return self.status
         
+        if self._current_task.task_class == TaskClass.DATA_TASK:
+            result = self._current_task.execute()
+            carb.log_warn(f"Task {self._current_task.name} completed with result {result}")
+            self._current_task = None
+            self.status = TaskManagerStatus.PENDING
+            if len(self.tasks) == 0:
+                carb.log_warn("All tasks completed")
+                self.status = TaskManagerStatus.COMPLETED
+            return self.status
+
         status = self._current_task.execute() 
         if status == RobotStatus.COMPLETED:
             self._current_task = None
@@ -69,9 +80,16 @@ class TaskManager:
     def test_task(self):
         self.add_task(
             Task(
-                name="Test Task",
-                function=self.robot_actor.move_pos,
+                name="go to center",
+                function=self.robot_actor.move_to_preset,
                 task_class=TaskClass.CONTROL_TASK,
-                pos=np.array([0.3, 0.3, 0.3])
+                preset_name="pick_center"
+            )
+        )
+        self.add_task(
+            Task(
+                name="get grasp image",
+                function=self.sim_manager.planner.grasp_plan,
+                task_class=TaskClass.DATA_TASK,
             )
         )

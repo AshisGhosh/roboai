@@ -187,7 +187,7 @@ services:
       - XAUTHORITY=/root/.Xauthority
       # - QT_QPA_PLATFORM=xcb
       # - QT_DEBUG_PLUGINS=1
-    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8001 --reload
+    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
     # command: python -u -m grasp_server.grasp
     # command:  /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
@@ -295,6 +295,7 @@ services:
       - ~/docker/isaac-sim/documents:/root/Documents:rw
       - ./isaac_sim/isaac_sim:/isaac-sim/roboai/
       - ./isaac_sim/app:/isaac-sim/app
+      - ./shared:/isaac-sim/roboai/shared
     environment:
       - DISPLAY=${DISPLAY}
       - XAUTHORITY=/root/.Xauthority
