@@ -1,182 +1,273 @@
+# to do: replace httpx with ollama wrapper
+
+
 import datetime as dt
 import os
 import json
+import sys
 import base64
 import argparse
 import logging
-from PIL import Image
+import httpx
 from dotenv import load_dotenv
-from litellm import completion
+# from litellm import completion
+# import ollama
+# import pandas as pd
+
 
 # Configure logging and environment
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("roboai")
 load_dotenv("shared/.env")
 
+def get_model_info(model_name):
+    api_url = "http://localhost:11434/api/show"
+    data = {"name": model_name}
+    try:
+        with httpx.Client() as client:
+            response = client.post(api_url, json=data)
+            response.raise_for_status()
+            model_data = response.json()
+            # Construct a dictionary with the relevant fields including model name
+            model_info = {
+                "name": model_name,
+                "modelfile": model_data.get("modelfile"),
+                "parameters": model_data.get("parameters"),
+                "template": model_data.get("template"),
+                "details": {
+                    "format": model_data.get("details", {}).get("format"),
+                    "family": model_data.get("details", {}).get("family"),
+                    "families": model_data.get("details", {}).get("families"),
+                    "parameter_size": model_data.get("details", {}).get("parameter_size"),
+                    "quantization_level": model_data.get("details", {}).get("quantization_level")
+                }
+            }
+            return model_info
+    except httpx.RequestError as e:
+        logger.error(f"An error occurred while requesting {e.request.url!r}.")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"Error response {e.response.status_code} while requesting {e.request.url!r}.")
+    return {}
+
+def preload_model(model_name):
+    api_url = "http://localhost:11434/api/generate"
+    data = {"model": model_name, "keep_alive": -1}
+    try:
+        with httpx.Client() as client:
+            response = client.post(api_url, json=data)
+            response.raise_for_status()
+            print("Model preloaded successfully.")
+    except httpx.RequestError as e:
+        logger.error(f"Request error during model preloading: {e}")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error during model preloading: {e.response.status_code}")
+
+def unload_model(model_name):
+    api_url = "http://localhost:11434/api/generate"
+    data = {"model": model_name, "keep_alive": 0}
+    try:
+        with httpx.Client() as client:
+            response = client.post(api_url, json=data)
+            response.raise_for_status()
+            print("Model unloaded successfully.")
+    except httpx.RequestError as e:
+        logger.error(f"Request error during model unloading: {e}")
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error during model unloading: {e.response.status_code}")
+
 def encode_image_to_base64(file_path):
     with open(file_path, "rb") as image_file:
         encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
     return encoded_string
 
-def get_caption_with_image(image_path):
+def get_caption_with_image(image_path, model_name, prompt):
+    """using generate endpoint instead of chat"""
+    api_url = "http://localhost:11434/api/generate"
     image_base64 = encode_image_to_base64(image_path)
-    prompt_text = "This image is a robot's 3rd-person view of a wooden table with objects on it. What are these objects? Imagine the table divided into quadrants with respect to your view: top/bottom, left/right. Which quadrants are each object in?"
-    response = completion(
-        model="ollama/llava",
-        api_base="http://localhost:11434",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt_text
-                    },
-                    {
-                        "type": "image_url",
-                        "image_url": {
-                            "url": image_base64
-                        }
-                    }
-                ]
-            }
-        ]
-    )
-    caption = response["choices"][0]["message"]["content"]
-    return caption, prompt_text
+    data = {"model": model_name, "prompt": prompt, "stream": False, "images": [image_base64]}
+    
+    try:
+        with httpx.Client() as client:
+            response = client.post(api_url, json=data)
+            response.raise_for_status()
+            json_response = response.json()
+            if 'response' not in json_response:
+                logger.error(f"Missing 'response' key in response for image {image_path}. Response: {json_response}")
+                return {"error": "Missing 'response' key", "response": json_response}
+            return json_response
+    except httpx.RequestError as e:
+        logger.error(f"Request error for {image_path}: {str(e)}")
+        return {"error": "Request error", "details": str(e)}
+    except httpx.HTTPStatusError as e:
+        logger.error(f"HTTP error for {image_path}: Status {e.response.status_code}")
+        return {"error": "HTTP error", "status": e.response.status_code, "details": str(e)}
 
-def process_folder(folder_path):
-    sim_metadata_path = os.path.join(folder_path, f"{os.path.basename(folder_path)}.json")
+# def get_caption_with_image(image_path):
+#     """LiteLLM version, may need update"""
+#     image_base64 = encode_image_to_base64(image_path)
+#     prompt = "This image is a robot's 3rd-person view of a wooden table with objects on it. What are these objects? Imagine the table divided into quadrants with respect to your view: top/bottom, left/right. Which quadrants are each object in?"
+#     try:
+#         response = completion(
+#             model="ollama/llava",
+#             api_base="http://localhost:11434",
+#             messages=[
+#                 {
+#                     "role": "user",
+#                     "content": [
+#                         {
+#                             "type": "text",
+#                             "text": prompt
+#                         },
+#                         {
+#                             "type": "image_url",
+#                             "image_url": {
+#                                 "url": image_base64
+#                             }
+#                         }
+#                     ]
+#                 }
+#             ]
+#         )
+#         # Extract only the JSON content or relevant parts of the response
+#         return response.json()  # Assuming 'completion' returns a response object like 'httpx.Response'
+#     except Exception as e:
+#         logger.error(f"Failed to get caption for image {image_path}: {e}")
+#         return {}  # Return an empty dict in case of failure
+
+def get_dir_path(latest_symlink_path, dir_name=None):
+    print(f"Latest symlink path: {latest_symlink_path}")
+    print(f"Directory name: {dir_name}")
+    
+    if dir_name:
+        dir_path = os.path.join("/app/shared/data/image_exports", dir_name)
+    else:
+        try:
+            resolved_symlink = os.path.join(os.path.dirname(latest_symlink_path), os.readlink(latest_symlink_path))
+            print(f"Resolved symlink '{latest_symlink_path}' to directory '{resolved_symlink}'")
+            dir_path = resolved_symlink
+        except OSError as e:
+            print(f"Failed to read symlink {latest_symlink_path}: {e}")
+            sys.exit(1)
+            
+    print(f"Final directory path: {dir_path}")
+    print(f"Current working directory: {os.getcwd()}")
+    print(f"Directory exists: {os.path.isdir(dir_path)}")
+    
+    if not os.path.isdir(dir_path):
+        print(f"Directory '{dir_path}' not found.")
+        sys.exit(1)
+    
+    return dir_path
+
+def process_dir(dir_path, model_name, prompt):
+    """preloads model, makes image/prompt calls to mode, then closes model"""
+    sim_metadata_path = os.path.join(dir_path, f"{os.path.basename(dir_path)}.json")
     with open(sim_metadata_path, 'r') as file:
         sim_metadata = json.load(file)
-    
-    sim_metadata['folder_path'] = folder_path 
+
+    preload_model(model_name)
 
     results = {}
-    for filename in sorted(os.listdir(folder_path)):
+    for filename in sorted(os.listdir(dir_path)):
         if filename.endswith(".png"):
-            image_path = os.path.join(folder_path, filename)
-            try:
-                caption, prompt = get_caption_with_image(image_path)
-                results[filename] = {
-                    'caption': caption,
-                    'prompt': prompt  
-                }
-                print(f"Processed {filename}: {caption}")
-            except Exception as e:
-                print(f"Error processing {filename}: {str(e)}")
+            image_path = os.path.join(dir_path, filename)
+            # This function call blocks until the response is received
+            api_response = get_caption_with_image(image_path, model_name, prompt)
+            if 'response' in api_response:  # Handling direct ollama API response for 'generate' endpoint
+                results[filename] = api_response
+                print(f"Processed {filename}: {api_response.get('response', 'No content')}")
+            elif 'message' in api_response:  # Handling litellm & ollama 'chat' endpoint
+                message_content = api_response['message'].get('content', 'No content') if isinstance(api_response['message'], dict) else 'No content'
+                results[filename] = api_response
+                print(f"Processed {filename}: {message_content}")
+            else:
+                error_message = f"Error processing {filename}: {api_response.get('error', 'Unknown error')}"
+                print(error_message)
+                results[filename] = {"error": "Failed to process image", "details": api_response}
 
+    unload_model(model_name)
     return results, sim_metadata
 
 def compare_results(results):
     # Placeholder for comparison logic
     print("Comparison results (placeholder):", results)
 
-def set_permissions(path):
-    os.chmod(path, 0o644)
-
-def generate_json_output(results, sim_metadata, output_file='output.json'):
+def generate_json_output(results, sim_metadata, model_info, prompt, output_file='output.json'):
     analysis_start_time = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    output_data = {
-        'sim_info': sim_metadata,
-        'analysis_start_time': f'{analysis_start_time} UTC',
-        'results': results
-    }
     
+    output_data = {
+        "sim_info": sim_metadata,
+        "model_info": model_info,
+        "analysis_start_time": analysis_start_time,
+        "prompt:": prompt,
+        "results": results
+    }
+
+    # Debugging: Log each item's type in results to check for non-serializable objects
+    for key, value in results.items():
+        logger.debug(f"Key: {key}, Type of value: {type(value)}")
+
     with open(output_file, 'w') as file:
         json.dump(output_data, file, indent=4)
-    print(f"JSON output generated at {output_file}")
+    logger.info(f"JSON output generated at {output_file}")
 
-def generate_html_output(results, sim_metadata, output_file='output.html'):
-    current_time = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    html_content = [
-        '<html>',
-        '<head><title>Roboai Simulation Image Analysis</title></head>',
-        '<body>',
-        '<h1>Roboai Simulation Image Analysis</h1>',
-        f'<p>Generated at {current_time} UTC</p>',
-        '<table border="1">',
-        '<tr><th>Run</th><th>Image</th><th>Details</th><th>Prompt</th><th>LLM Output</th></tr>'
-    ]
+def load_output_json(o_json_file_path):
+    try:
+        with open(o_json_file_path, 'r') as file:
+            return json.load(file)
+    except FileNotFoundError:
+        print(f"Error: The file {o_json_file_path} does not exist.")
+        return None
+    except json.JSONDecodeError:
+        print(f"Error: The file {o_json_file_path} could not be decoded.")
+        return None
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        return None
 
-    for run_info in sim_metadata['runs']:
-        run_number = run_info['run']
-        image_file = run_info['image_file']
-        html_image_path = f"../../{image_file}"  # Correct, assuming HTML is two levels deeper
-
-        # Add the main image row
-        html_content.append('<tr>')
-        html_content.append(f'<td>{run_number}</td>')
-        html_content.append(f'<td><img src="{html_image_path}" alt="{html_image_path}"></td>')
-        html_content.append(f'<td><pre>{json.dumps(run_info, indent=4)}</pre></td>')
-        html_content.append(f'<td>{results[image_file]["prompt"]}</td>')
-        html_content.append(f'<td>{results[image_file]["caption"]}</td>')
-        html_content.append('</tr>')
-
-        # Check for and add a flipped image row
-        flipped_image_file = image_file.replace('.png', '_flipped.png')
-        flipped_image_path = f"../../{flipped_image_file}"  # Relative path must match the file structure
-        full_flipped_image_path = os.path.join(sim_metadata['folder_path'], flipped_image_file)  # Full path for existence check
-        if os.path.exists(full_flipped_image_path):
-            html_content.append('<tr>')
-            html_content.append(f'<td>{run_number} (Flipped)</td>')
-            html_content.append(f'<td><img src="{flipped_image_path}" alt="{flipped_image_path}"></td>')
-            html_content.append('<td>-</td>')
-            html_content.append(f'<td>{results[flipped_image_file]["prompt"]}</td>')
-            html_content.append(f'<td>{results[flipped_image_file]["caption"]}</td>')
-            html_content.append('</tr>')
-
-    html_content.append('</table>')
-    html_content.append('</body></html>')
-
-    with open(output_file, 'w') as file:
-        file.write('\n'.join(html_content))
-    print(f"HTML output generated at {output_file}")
+def html_from_output_json():
+    pass
 
 def main():
-    parser = argparse.ArgumentParser(description="Process image folder and compare LLM captions.")
-    parser.add_argument("folder_name", nargs="?", help="Name of the folder containing the dataset. If not specified, the script will use the 'latest' symlink.")
+    parser = argparse.ArgumentParser(description="Process image dir and compare LLM captions.")
+    parser.add_argument("dir_name", nargs="?", help="Name of the dir containing the dataset. If not specified, the script will use the 'latest' symlink.")
     args = parser.parse_args()
 
     latest_symlink_path = "/app/shared/data/image_exports/latest"
-    folder_name = args.folder_name if args.folder_name else os.path.basename(os.readlink(latest_symlink_path))
-    folder_path = os.path.join("/app/shared/data/image_exports", folder_name)
-    if not os.path.isdir(folder_path):
-        print(f"Error: Folder '{folder_name}' not found.")
-        sys.exit(1)
+    dir_path = get_dir_path(latest_symlink_path, args.dir_name)
 
-    analysis_folder = os.path.join(folder_path, "analysis")
-    if not os.path.exists(analysis_folder):
-        os.makedirs(analysis_folder)
-        os.chmod(analysis_folder, 0o755)  # Set directory permissions to 755 immediately after creation
+    analysis_dir = os.path.join(dir_path, "analysis")
+    if not os.path.exists(analysis_dir):
+        os.makedirs(analysis_dir)
+        os.chmod(analysis_dir, 0o755)
 
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    specific_analysis_folder = os.path.join(analysis_folder, timestamp)
-    os.makedirs(specific_analysis_folder)
-    os.chmod(specific_analysis_folder, 0o755)  # Set directory permissions to 755
+    analysis_session_dir = os.path.join(analysis_dir, timestamp)
+    os.makedirs(analysis_session_dir)
+    os.chmod(analysis_session_dir, 0o755)
 
-    results, sim_metadata = process_folder(folder_path)
-    compare_results(results)
+    model_name = "llava"
+    prompt = "This image is a robot's 3rd-person view of a wooden table with objects on it. What are these objects? Imagine the table divided into quadrants with respect to your view: top/bottom, left/right. Which quadrants are each object in?"    
 
-    # Generate outputs in the new specific analysis subfolder
-    output_html_path = os.path.join(specific_analysis_folder, 'output.html')
-    output_json_path = os.path.join(specific_analysis_folder, 'output.json')
-    generate_html_output(results, sim_metadata, output_file=output_html_path)
-    generate_json_output(results, sim_metadata, output_file=output_json_path)
-    
+    model_info = get_model_info(model_name)
+    if model_info:
+        print(f"Model Info: {model_info}")
+        results, sim_metadata = process_dir(dir_path, model_name, prompt)
+        compare_results(results)
+
+        output_json_path = os.path.join(analysis_session_dir, 'output.json')
+        generate_json_output(results, sim_metadata, model_info, prompt, output_file=output_json_path)
+    else:
+        print("Failed to fetch model information. Aborting image processing.")
+
     # Set file permissions right after creation
-    os.chmod(output_html_path, 0o644)
     os.chmod(output_json_path, 0o644)
-
-    # Optionally change ownership to match the host user, if the script runs as root
-    if os.getuid() == 0:  # Check if the current script is running as root
+    if os.getuid() == 0:  # Optionally change ownership to match the host user, if the script runs as root
         host_uid = 1000  # Replace with actual host user ID
         host_gid = 1000  # Replace with actual host group ID
-        os.chown(analysis_folder, host_uid, host_gid)
-        os.chown(specific_analysis_folder, host_uid, host_gid)
-        os.chown(output_html_path, host_uid, host_gid)
+        os.chown(analysis_dir, host_uid, host_gid)
+        os.chown(analysis_session_dir, host_uid, host_gid)
         os.chown(output_json_path, host_uid, host_gid)
-
 
 if __name__ == "__main__":
     main()

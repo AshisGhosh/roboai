@@ -16,6 +16,7 @@ ollama = "^0.1.8"
 gradio-client = "^0.15.1"
 sentence-transformers = "^2.6.1"
 replicate = "^0.25.1"
+pandas = "^2.2.2" 
 
 
 [build-system]
