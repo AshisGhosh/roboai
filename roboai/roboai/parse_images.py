@@ -5,11 +5,11 @@ import sys
 import base64
 import argparse
 import logging
-import httpx
-from dotenv import load_dotenv
 import ollama
-# import pandas as pd  # this is for html output later on
+import pandas as pd
 
+from dotenv import load_dotenv
+from html import escape
 
 # Configure logging and environment
 logging.basicConfig(level=logging.INFO)
@@ -160,8 +160,71 @@ def load_output_json(o_json_file_path):
         print(f"An error occurred: {e}")
         return None
 
-def html_from_output_json():
-    pass
+def html_from_output_json(json_file_path, html_output_path):
+    try:
+        with open(json_file_path, 'r') as file:
+            data = json.load(file)
+
+        results = data['results']
+        sim_info = data['sim_info']['runs']
+        rows = []
+        for filename, content in results.items():
+            response = escape(content.get('response', '')).replace("\n", "<br>")
+            details_json = json.dumps(content, indent=4).replace("\n", "<br>")
+            details = f"<details><summary>View Details</summary><pre>{details_json}</pre></details>"
+
+            sim_details = next((run for run in sim_info if run['image_file'] == filename), None)
+            sim_details_json = json.dumps(sim_details, indent=4).replace("\n", "<br>") if sim_details else "No sim details available"
+            sim_details_formatted = f"<details><summary>View Sim Details</summary><pre><code>{sim_details_json}</code></pre></details>"
+
+            rows.append({
+                'Run': filename.split('.')[0],
+                'Image Filename': filename,
+                'Image': f'<img src="../../{filename}" alt="{filename}" class="expandable">',
+                'Prompt': escape(data['prompt:']).replace("\n", "<br>"),
+                'Response Message': response,
+                'Full Response': details,
+                'Sim Details': sim_details_formatted
+            })
+        df = pd.DataFrame(rows)
+        
+        html_style_script = '''
+        <style>
+            body { background-color: #263238; color: #ECEFF1; font-family: monospace; font-size: 1.1em; }
+            pre, code { white-space: pre-wrap; font-size: smaller; }
+            details summary { cursor: pointer; }
+            img.expandable { width: 100px; height: auto; cursor: pointer; transition: transform 0.25s ease; }
+            img.expandable:hover { transform: scale(1.05); }
+            table { width: 100%; border-collapse: collapse; }
+            th, td { border: 1px solid #37474F; padding: 12px; text-align: left; font-size: 0.9em; }
+        </style>
+        <script>
+            document.addEventListener('DOMContentLoaded', function () {
+                document.querySelectorAll('img.expandable').forEach(img => {
+                    img.onclick = function () {
+                        if (img.style.width == '100px') {
+                            img.style.width = '100%';
+                            img.style.height = 'auto';
+                        } else {
+                            img.style.width = '100px';
+                            img.style.height = 'auto';
+                        }
+                    };
+                });
+            });
+        </script>
+        '''
+        
+        html_table = df.to_html(escape=False, index=False)
+        html_content = f"{html_style_script}{html_table}"
+
+        with open(html_output_path, 'w') as f:
+            f.write(html_content)
+
+        print(f"HTML output generated at {html_output_path}")
+        
+    except Exception as e:
+        print(f"An error occurred while generating HTML: {e}")
 
 def main():
     parser = argparse.ArgumentParser(description="Process image dir and compare LLM captions.")
@@ -182,27 +245,32 @@ def main():
     os.chmod(analysis_session_dir, 0o755)
 
     model_name = "llava"
-    prompt = "This image is a robot's 3rd-person view of a wooden table with objects on it. What are these objects? Imagine the table divided into quadrants with respect to your view: top/bottom, left/right. Which quadrants are each object in?"    
+    prompt = "You are a robot with a camera input. This image is the feed from your camera pointed at a wooden table with objects on it. What are these objects? Visualize the table divided into quadrants relative to the perspective of the image: top-left, top-right, bottom-left, bottom-right. What objects are located in which quadrants?"    
 
     model_info = get_model_info(model_name)
     if model_info:
-        print(f"Model Info: {model_info}")
+        logger.info(f"Model Info: {model_info}")
         results, sim_metadata = process_dir(dir_path, model_name, prompt)
         compare_results(results)
 
         output_json_path = os.path.join(analysis_session_dir, 'output.json')
+        output_html_path = os.path.join(analysis_session_dir, 'output.html')
         generate_json_output(results, sim_metadata, model_info, prompt, output_file=output_json_path)
-    else:
-        print("Failed to fetch model information. Aborting image processing.")
+        html_from_output_json(output_json_path, output_html_path)
 
-    # Set file permissions right after creation
-    os.chmod(output_json_path, 0o644)
-    if os.getuid() == 0:  # Optionally change ownership to match the host user, if the script runs as root
-        host_uid = 1000  # Replace with actual host user ID
-        host_gid = 1000  # Replace with actual host group ID
-        os.chown(analysis_dir, host_uid, host_gid)
-        os.chown(analysis_session_dir, host_uid, host_gid)
-        os.chown(output_json_path, host_uid, host_gid)
+        # Set file permissions right after creation
+        os.chmod(output_json_path, 0o644)
+        os.chmod(output_html_path, 0o644)
+        if os.getuid() == 0:  # Optionally change ownership to match the host user, if the script runs as root
+            host_uid = 1000  # Replace with actual host user ID
+            host_gid = 1000  # Replace with actual host group ID
+            os.chown(analysis_dir, host_uid, host_gid)
+            os.chown(analysis_session_dir, host_uid, host_gid)
+            os.chown(output_json_path, host_uid, host_gid)
+            os.chown(output_html_path, host_uid, host_gid)
+    else:
+        logger.error("Failed to fetch model information. Aborting image processing.")
+
 
 if __name__ == "__main__":
     main()
