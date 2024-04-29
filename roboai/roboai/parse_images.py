@@ -1,6 +1,3 @@
-# to do: replace httpx with ollama wrapper
-
-
 import datetime as dt
 import os
 import json
@@ -10,9 +7,8 @@ import argparse
 import logging
 import httpx
 from dotenv import load_dotenv
-# from litellm import completion
-# import ollama
-# import pandas as pd
+import ollama
+# import pandas as pd  # this is for html output later on
 
 
 # Configure logging and environment
@@ -21,59 +17,40 @@ logger = logging.getLogger("roboai")
 load_dotenv("shared/.env")
 
 def get_model_info(model_name):
-    api_url = "http://localhost:11434/api/show"
-    data = {"name": model_name}
-    try:
-        with httpx.Client() as client:
-            response = client.post(api_url, json=data)
-            response.raise_for_status()
-            model_data = response.json()
-            # Construct a dictionary with the relevant fields including model name
-            model_info = {
-                "name": model_name,
-                "modelfile": model_data.get("modelfile"),
-                "parameters": model_data.get("parameters"),
-                "template": model_data.get("template"),
-                "details": {
-                    "format": model_data.get("details", {}).get("format"),
-                    "family": model_data.get("details", {}).get("family"),
-                    "families": model_data.get("details", {}).get("families"),
-                    "parameter_size": model_data.get("details", {}).get("parameter_size"),
-                    "quantization_level": model_data.get("details", {}).get("quantization_level")
-                }
-            }
-            return model_info
-    except httpx.RequestError as e:
-        logger.error(f"An error occurred while requesting {e.request.url!r}.")
-    except httpx.HTTPStatusError as e:
-        logger.error(f"Error response {e.response.status_code} while requesting {e.request.url!r}.")
-    return {}
+    model_data = ollama.show(model_name)
+        # Construct a dictionary with the relevant fields including model name
+    model_info = {
+        "name": model_name,
+        "modelfile": model_data.get("modelfile"),
+        "parameters": model_data.get("parameters"),
+        "template": model_data.get("template"),
+        "details": {
+            "format": model_data.get("details", {}).get("format"),
+            "family": model_data.get("details", {}).get("family"),
+            "families": model_data.get("details", {}).get("families"),
+            "parameter_size": model_data.get("details", {}).get("parameter_size"),
+            "quantization_level": model_data.get("details", {}).get("quantization_level")
+        }
+    }
+    return model_info
 
 def preload_model(model_name):
-    api_url = "http://localhost:11434/api/generate"
-    data = {"model": model_name, "keep_alive": -1}
     try:
-        with httpx.Client() as client:
-            response = client.post(api_url, json=data)
-            response.raise_for_status()
-            print("Model preloaded successfully.")
-    except httpx.RequestError as e:
-        logger.error(f"Request error during model preloading: {e}")
-    except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error during model preloading: {e.response.status_code}")
+        preload_response = ollama.generate(model=model_name, keep_alive=-1)
+        print("Model preloaded successfully.\n", preload_response)
+    except ollama.ResponseError as e:
+        logger.error(f"ollama Response Error during preload: {e.error}")
+    except Exception as err:
+        logger.error(f"Unexpected error during model preload: {err}")
 
 def unload_model(model_name):
-    api_url = "http://localhost:11434/api/generate"
-    data = {"model": model_name, "keep_alive": 0}
     try:
-        with httpx.Client() as client:
-            response = client.post(api_url, json=data)
-            response.raise_for_status()
-            print("Model unloaded successfully.")
-    except httpx.RequestError as e:
-        logger.error(f"Request error during model unloading: {e}")
-    except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error during model unloading: {e.response.status_code}")
+        unload_response = ollama.generate(model=model_name, keep_alive=0)
+        print("Model unloaded successfully.\n", unload_response)
+    except ollama.ResponseError as e:
+        logger.error(f"ollama Response Error during unload: {e.error}")
+    except Exception as err:
+        logger.error(f"Unexpected error during model unload: {err}")
 
 def encode_image_to_base64(file_path):
     with open(file_path, "rb") as image_file:
@@ -81,58 +58,16 @@ def encode_image_to_base64(file_path):
     return encoded_string
 
 def get_caption_with_image(image_path, model_name, prompt):
-    """using generate endpoint instead of chat"""
-    api_url = "http://localhost:11434/api/generate"
-    image_base64 = encode_image_to_base64(image_path)
-    data = {"model": model_name, "prompt": prompt, "stream": False, "images": [image_base64]}
-    
     try:
-        with httpx.Client() as client:
-            response = client.post(api_url, json=data)
-            response.raise_for_status()
-            json_response = response.json()
-            if 'response' not in json_response:
-                logger.error(f"Missing 'response' key in response for image {image_path}. Response: {json_response}")
-                return {"error": "Missing 'response' key", "response": json_response}
-            return json_response
-    except httpx.RequestError as e:
-        logger.error(f"Request error for {image_path}: {str(e)}")
-        return {"error": "Request error", "details": str(e)}
-    except httpx.HTTPStatusError as e:
-        logger.error(f"HTTP error for {image_path}: Status {e.response.status_code}")
-        return {"error": "HTTP error", "status": e.response.status_code, "details": str(e)}
-
-# def get_caption_with_image(image_path):
-#     """LiteLLM version, may need update"""
-#     image_base64 = encode_image_to_base64(image_path)
-#     prompt = "This image is a robot's 3rd-person view of a wooden table with objects on it. What are these objects? Imagine the table divided into quadrants with respect to your view: top/bottom, left/right. Which quadrants are each object in?"
-#     try:
-#         response = completion(
-#             model="ollama/llava",
-#             api_base="http://localhost:11434",
-#             messages=[
-#                 {
-#                     "role": "user",
-#                     "content": [
-#                         {
-#                             "type": "text",
-#                             "text": prompt
-#                         },
-#                         {
-#                             "type": "image_url",
-#                             "image_url": {
-#                                 "url": image_base64
-#                             }
-#                         }
-#                     ]
-#                 }
-#             ]
-#         )
-#         # Extract only the JSON content or relevant parts of the response
-#         return response.json()  # Assuming 'completion' returns a response object like 'httpx.Response'
-#     except Exception as e:
-#         logger.error(f"Failed to get caption for image {image_path}: {e}")
-#         return {}  # Return an empty dict in case of failure
+        image_base64 = encode_image_to_base64(image_path)
+        response = ollama.generate(model=model_name, prompt=prompt, stream=False, images=[image_base64])
+        return response
+    except ollama.ResponseError as e:
+        logger.error(f"ollama Response Error: {e.error}")
+        return {"error": "ollama Response Error", "status_code": e.status_code, "details": e.error}
+    except Exception as err:
+        logger.error(f"An unexpected error occurred: {err}")  # Log unexpected errors
+        return {"error": "Unexpected error", "details": str(err)}
 
 def get_dir_path(latest_symlink_path, dir_name=None):
     print(f"Latest symlink path: {latest_symlink_path}")
