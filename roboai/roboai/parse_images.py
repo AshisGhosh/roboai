@@ -8,6 +8,12 @@ import logging
 import ollama
 import pandas as pd
 
+# put in fast embed w/ mixedbread-ai/mxbai-embed-large-v1
+# num of objects
+# name of objects
+# position l-r
+# json mode
+
 from dotenv import load_dotenv
 from html import escape
 
@@ -60,7 +66,7 @@ def encode_image_to_base64(file_path):
 def get_caption_with_image(image_path, model_name, prompt):
     try:
         image_base64 = encode_image_to_base64(image_path)
-        response = ollama.generate(model=model_name, prompt=prompt, stream=False, images=[image_base64])
+        response = ollama.generate(model=model_name, prompt=prompt, stream=False, images=[image_base64], format="json")
         return response
     except ollama.ResponseError as e:
         logger.error(f"ollama Response Error: {e.error}")
@@ -251,7 +257,17 @@ def main():
     os.chmod(analysis_session_dir, 0o755)
 
     model_name = "llava"
-    prompt = "You are a robot with a camera input. This image is the feed from your camera pointed at a wooden table with objects on it. What are these objects? Visualize the table divided into quadrants relative to the perspective of the image: top-left, top-right, bottom-left, bottom-right. What objects are located in which quadrants?"    
+    prompt = """
+    How many objects are on the table? What are the objects? Order the objects as they appear from left to right.
+    
+    Respond using JSON. Follow the pattern: 
+    {
+    "objects": {
+        "count": <number_of_objects>, 
+        "names": ["first object from left", "next object from left", "last object from left"]
+    }
+    }
+    """
 
     model_info = get_model_info(model_name)
     if model_info:
