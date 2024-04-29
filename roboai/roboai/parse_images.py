@@ -191,23 +191,29 @@ def html_from_output_json(json_file_path, html_output_path):
         html_style_script = '''
         <style>
             body { background-color: #263238; color: #ECEFF1; font-family: monospace; font-size: 1.1em; }
-            pre, code { white-space: pre-wrap; font-size: smaller; }
+            pre { white-space: pre-wrap; font-size: smaller; }
             details summary { cursor: pointer; }
-            img.expandable { width: 100px; height: auto; cursor: pointer; transition: transform 0.25s ease; }
+            img.expandable {width: 100px; height: auto; cursor: pointer; transition: transform 0.25s ease; }
             img.expandable:hover { transform: scale(1.05); }
             table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #37474F; padding: 12px; text-align: left; font-size: 0.9em; }
+            th, td { border: 1px solid #37474F; padding: 12px; text-align: left; font-size: 0.9em; overflow: visible; position: relative; }
         </style>
         <script>
             document.addEventListener('DOMContentLoaded', function () {
                 document.querySelectorAll('img.expandable').forEach(img => {
                     img.onclick = function () {
-                        if (img.style.width == '100px') {
-                            img.style.width = '100%';
-                            img.style.height = 'auto';
+                        const cell = img.closest('td'); // Get the parent cell of the image
+                        if (img.style.width === '100px' || img.style.width === '') { // Check current state
+                            img.style.position = 'absolute';
+                            img.style.width = 'auto'; // Allow the image to grow naturally
+                            img.style.maxWidth = '100%'; // Ensure it does not exceed the screen width
+                            img.style.zIndex = '1000'; // Ensure it overlays other content
+                            cell.style.position = 'static'; // Ensure cell does not limit the image size
                         } else {
-                            img.style.width = '100px';
-                            img.style.height = 'auto';
+                            img.style.position = '';
+                            img.style.width = '100px'; // Reset to thumbnail size
+                            img.style.maxWidth = ''; // Remove max width constraint
+                            img.style.zIndex = '';
                         }
                     };
                 });
