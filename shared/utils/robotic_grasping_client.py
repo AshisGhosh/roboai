@@ -30,8 +30,8 @@ async def _get_grasps_from_rgb_and_depth(rgb_image: Image, depth_image: Image) -
     response = await post_request(f"{SERVER_NAME}/get_grasps", files=files, timeout=timeout)
     return response
 
-def get_grasps_from_rgb_and_depth(image: Image) -> Dict[str, Any]:
-    return asyncio.run(_get_grasps_from_rgb_and_depth(image))
+def get_grasps_from_rgb_and_depth(rgb_image: Image, depth_image: Image) -> Dict[str, Any]:
+    return asyncio.run(_get_grasps_from_rgb_and_depth(rgb_image, depth_image))
 
 async def _check_server() -> str:
     response = await get_request(f"{SERVER_NAME}/")
