@@ -56,13 +56,10 @@ RUN apt install -y python3-colcon-common-extensions \
                 python3-vcstool \
                 python3-rosinstall-generator
 
-WORKDIR /root
-RUN apt-get install -y git
-RUN git clone https://github.com/NVIDIA-Omniverse/IsaacSim-ros_workspaces.git
+COPY ./isaac_sim/humble_ws /isaac-sim/humble_ws
 SHELL ["/bin/bash", "-c"]
 RUN source /opt/ros/humble/setup.bash && \
-         cd IsaacSim-ros_workspaces/humble_ws && \
+         cd humble_ws && \
          colcon build
-RUN echo "source /root/IsaacSim-ros_workspaces/humble_ws/install/setup.bash" >> /root/.bashrc
-WORKDIR /isaac-sim
-
+RUN echo "source /isaac-sim/humble_ws/install/setup.bash" >> /root/.bashrc
+ENV PYTHONPATH=/isaac-sim:$PYTHONPATH

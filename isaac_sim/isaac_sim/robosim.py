@@ -1,3 +1,4 @@
+import os
 import sys
 import time
 
@@ -11,7 +12,8 @@ from roboai.robot import RobotActor
 from roboai.tasks import TaskManager
 from roboai.planner import Planner
 
-global World, Robot, Franka, nucleus, stage, prims, rotations, viewports, Gf, UsdGeom, ArticulationMotionPolicy, RMPFlowController
+global World, Robot, Franka, extensions, nucleus, stage, prims, rotations, viewports, Gf, UsdGeom, ArticulationMotionPolicy, RMPFlowController, og
+
 
 WORLD_STAGE_PATH = "/World"
 FRANKA_STAGE_PATH = WORLD_STAGE_PATH + "/Franka"
@@ -65,6 +67,8 @@ class SimManager:
         self._load_objects()
         self._create_markers()
         self._init_cameras()
+        self._enable_ros2_bridge_ext()
+        self._load_omnigraph()
 
         franka = self.world.scene.get_object("franka")
         controller = RMPFlowController(name="target_follower_controller", robot_articulation=franka)
@@ -75,12 +79,13 @@ class SimManager:
         self.planner = Planner(sim_manager=self, robot_actor=self.robot_actor)
 
     def _do_imports(self):
-        global World, Robot, Franka, nucleus, stage, prims, rotations, viewports, Gf, UsdGeom, ArticulationMotionPolicy, RMPFlowController
+        global World, Robot, Franka, extensions, nucleus, stage, prims, rotations, viewports, Gf, UsdGeom, ArticulationMotionPolicy, RMPFlowController, og
         
         from omni.isaac.core import World
         from omni.isaac.core.robots import Robot
         from omni.isaac.franka import Franka
         from omni.isaac.core.utils import (
+            extensions,
             nucleus,
             stage,
             prims,
@@ -90,6 +95,7 @@ class SimManager:
         from pxr import Gf, UsdGeom  # noqa E402
         from omni.isaac.motion_generation.articulation_motion_policy import ArticulationMotionPolicy
         from omni.isaac.franka.controllers.rmpflow_controller import RMPFlowController
+        import omni.graph.core as og
 
     def _get_assets_root_path(self):
         start_time = time.time()
@@ -220,14 +226,151 @@ class SimManager:
             position=(0, 2.75, 2.67),
             orientation=rotations.gf_rotation_to_np_array(camera_rot)
             )        
-        # self.cameras["agentview"].set_world_pose(
-        #     position=(0, 2.75, 2.67),
-        #     orientation=(0.00061, 0.0032, 0.38051, 0.92477)
-        # )
         
         self.world.reset()
         for cam in self.cameras.values():
             cam.initialize()
+    
+    def _enable_ros2_bridge_ext(self):
+        extensions.enable_extension("omni.isaac.ros2_bridge")
+    
+    def _load_omnigraph(self):
+        carb.log_warn("Loading Omnigraph")
+
+        try:
+            ros_domain_id = int(os.environ["ROS_DOMAIN_ID"])
+            print("Using ROS_DOMAIN_ID: ", ros_domain_id)
+        except ValueError:
+            print("Invalid ROS_DOMAIN_ID integer value. Setting value to 0")
+            ros_domain_id = 0
+        except KeyError:
+            print("ROS_DOMAIN_ID environment variable is not set. Setting value to 0")
+            ros_domain_id = 0
+
+        try:
+            og.Controller.edit(
+                {"graph_path": GRAPH_PATH, "evaluator_name": "execution"},
+                {
+                    og.Controller.Keys.CREATE_NODES: [
+                        ("OnImpulseEvent", "omni.graph.action.OnImpulseEvent"),
+                        ("ReadSimTime", "omni.isaac.core_nodes.IsaacReadSimulationTime"),
+                        ("Context", "omni.isaac.ros2_bridge.ROS2Context"),
+                        ("PublishJointState", "omni.isaac.ros2_bridge.ROS2PublishJointState"),
+                        (
+                            "SubscribeJointState",
+                            "omni.isaac.ros2_bridge.ROS2SubscribeJointState",
+                        ),
+                        (
+                            "ArticulationController",
+                            "omni.isaac.core_nodes.IsaacArticulationController",
+                        ),
+                        ("PublishClock", "omni.isaac.ros2_bridge.ROS2PublishClock"),
+                        ("OnTick", "omni.graph.action.OnTick"),
+                        ("createViewport", "omni.isaac.core_nodes.IsaacCreateViewport"),
+                        (
+                            "getRenderProduct",
+                            "omni.isaac.core_nodes.IsaacGetViewportRenderProduct",
+                        ),
+                        ("setCamera", "omni.isaac.core_nodes.IsaacSetCameraOnRenderProduct"),
+                        ("cameraHelperRgb", "omni.isaac.ros2_bridge.ROS2CameraHelper"),
+                        ("cameraHelperInfo", "omni.isaac.ros2_bridge.ROS2CameraHelper"),
+                        ("cameraHelperDepth", "omni.isaac.ros2_bridge.ROS2CameraHelper"),
+                    ],
+                    og.Controller.Keys.CONNECT: [
+                        ("OnImpulseEvent.outputs:execOut", "PublishJointState.inputs:execIn"),
+                        ("OnImpulseEvent.outputs:execOut", "SubscribeJointState.inputs:execIn"),
+                        ("OnImpulseEvent.outputs:execOut", "PublishClock.inputs:execIn"),
+                        (
+                            "OnImpulseEvent.outputs:execOut",
+                            "ArticulationController.inputs:execIn",
+                        ),
+                        ("Context.outputs:context", "PublishJointState.inputs:context"),
+                        ("Context.outputs:context", "SubscribeJointState.inputs:context"),
+                        ("Context.outputs:context", "PublishClock.inputs:context"),
+                        (
+                            "ReadSimTime.outputs:simulationTime",
+                            "PublishJointState.inputs:timeStamp",
+                        ),
+                        ("ReadSimTime.outputs:simulationTime", "PublishClock.inputs:timeStamp"),
+                        (
+                            "SubscribeJointState.outputs:jointNames",
+                            "ArticulationController.inputs:jointNames",
+                        ),
+                        (
+                            "SubscribeJointState.outputs:positionCommand",
+                            "ArticulationController.inputs:positionCommand",
+                        ),
+                        (
+                            "SubscribeJointState.outputs:velocityCommand",
+                            "ArticulationController.inputs:velocityCommand",
+                        ),
+                        (
+                            "SubscribeJointState.outputs:effortCommand",
+                            "ArticulationController.inputs:effortCommand",
+                        ),
+                        ("OnTick.outputs:tick", "createViewport.inputs:execIn"),
+                        ("createViewport.outputs:execOut", "getRenderProduct.inputs:execIn"),
+                        ("createViewport.outputs:viewport", "getRenderProduct.inputs:viewport"),
+                        ("getRenderProduct.outputs:execOut", "setCamera.inputs:execIn"),
+                        (
+                            "getRenderProduct.outputs:renderProductPath",
+                            "setCamera.inputs:renderProductPath",
+                        ),
+                        ("setCamera.outputs:execOut", "cameraHelperRgb.inputs:execIn"),
+                        ("setCamera.outputs:execOut", "cameraHelperInfo.inputs:execIn"),
+                        ("setCamera.outputs:execOut", "cameraHelperDepth.inputs:execIn"),
+                        ("Context.outputs:context", "cameraHelperRgb.inputs:context"),
+                        ("Context.outputs:context", "cameraHelperInfo.inputs:context"),
+                        ("Context.outputs:context", "cameraHelperDepth.inputs:context"),
+                        (
+                            "getRenderProduct.outputs:renderProductPath",
+                            "cameraHelperRgb.inputs:renderProductPath",
+                        ),
+                        (
+                            "getRenderProduct.outputs:renderProductPath",
+                            "cameraHelperInfo.inputs:renderProductPath",
+                        ),
+                        (
+                            "getRenderProduct.outputs:renderProductPath",
+                            "cameraHelperDepth.inputs:renderProductPath",
+                        ),
+                    ],
+                    og.Controller.Keys.SET_VALUES: [
+                        ("Context.inputs:domain_id", ros_domain_id),
+                        # Setting the /Franka target prim to Articulation Controller node
+                        ("ArticulationController.inputs:usePath", True),
+                        ("ArticulationController.inputs:robotPath", FRANKA_STAGE_PATH),
+                        ("PublishJointState.inputs:topicName", "isaac_joint_states"),
+                        ("SubscribeJointState.inputs:topicName", "isaac_joint_commands"),
+                        ("createViewport.inputs:name", REALSENSE_VIEWPORT_NAME),
+                        ("createViewport.inputs:viewportId", 1),
+                        ("cameraHelperRgb.inputs:frameId", "sim_camera"),
+                        ("cameraHelperRgb.inputs:topicName", "rgb"),
+                        ("cameraHelperRgb.inputs:type", "rgb"),
+                        ("cameraHelperInfo.inputs:frameId", "sim_camera"),
+                        ("cameraHelperInfo.inputs:topicName", "camera_info"),
+                        ("cameraHelperInfo.inputs:type", "camera_info"),
+                        ("cameraHelperDepth.inputs:frameId", "sim_camera"),
+                        ("cameraHelperDepth.inputs:topicName", "depth"),
+                        ("cameraHelperDepth.inputs:type", "depth"),
+                    ],
+                },
+            )
+            carb.log_warn("Omnigraph loaded successfully")
+        except Exception as e:
+            carb.log_error(e)
+            carb.log_warn("Failed to load Omnigraph")
+        
+        from omni.isaac.core_nodes.scripts.utils import set_target_prims
+        set_target_prims(
+            primPath="/ActionGraph/PublishJointState", targetPrimPaths=[FRANKA_STAGE_PATH]
+        )
+
+        prims.set_targets(
+            prim=stage.get_current_stage().GetPrimAtPath(GRAPH_PATH + "/setCamera"),
+            attribute="inputs:cameraPrim",
+            target_prim_paths=[CAMERA_PRIM_PATH],
+        )
     
     def close_sim(self):
         self.sim.close()       
@@ -239,7 +382,11 @@ class SimManager:
                 if self.world.current_time_step_index == 0:
                     self.world.reset()
                     controller.reset()
-                self.task_manager.do_tasks()
+                # Tick the Publish/Subscribe JointState, Publish TF and Publish Clock nodes each frame
+                og.Controller.set(
+                    og.Controller.attribute("/ActionGraph/OnImpulseEvent.state:enableImpulse"), True
+                )
+                # self.task_manager.do_tasks()
             self.sim.update()
     
     def get_image(self, camera_name="realsense", mode=CameraMode.RGB, visualize=False):
