@@ -45,4 +45,4 @@ if __name__ == "__main__":
     image = Image.open(img_path)
     enc_image = model.encode_image(image)
     question = "Describe this image."
-    print(model.answer_question(enc_image, question))
+    log.info(model.answer_question(enc_image, question))
