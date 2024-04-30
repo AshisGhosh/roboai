@@ -115,10 +115,10 @@ services:
 
   autogen-roboai:
     build:
-      context: ./autogen_roboai
+      context: ./agent_frameworks/autogen_roboai
       dockerfile: Dockerfile
     volumes:
-      - ./autogen_roboai:/app
+      - ./agent_frameworks/autogen_roboai:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
     environment:
       - DISPLAY=${DISPLAY}
@@ -130,10 +130,10 @@ services:
 
   crewai-roboai:
     build:
-      context: ./crewai_roboai
+      context: ./agent_frameworks/crewai_roboai
       dockerfile: Dockerfile
     volumes:
-      - ./crewai_roboai:/app
+      - ./agent_frameworks/crewai_roboai:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
     environment:
       - DISPLAY=${DISPLAY}
@@ -145,10 +145,10 @@ services:
   
   langroid-roboai:
     build:
-      context: ./langroid_roboai
+      context: ./agent_frameworks/langroid_roboai
       dockerfile: Dockerfile
     volumes:
-      - ./langroid_roboai:/app
+      - ./agent_frameworks/langroid_roboai:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
     environment:
       - DISPLAY=${DISPLAY}
