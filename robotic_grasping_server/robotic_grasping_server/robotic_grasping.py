@@ -16,12 +16,12 @@ from PIL import Image
 
 
 class GraspGenerator:
-    def __init__(self, saved_model_path='/robotic-grasping/trained-models/cornell-randsplit-rgbd-grconvnet3-drop1-ch32/epoch_19_iou_0.98', visualize=False):
+    def __init__(self, saved_model_path='/robotic-grasping/trained-models/cornell-randsplit-rgbd-grconvnet3-drop1-ch32/epoch_19_iou_0.98', visualize=False, force_cpu=False):
         self.saved_model_path = saved_model_path
 
         self.saved_model_path = saved_model_path
         self.model = None
-        self.device = None
+        self.device = get_device(force_cpu=force_cpu)
 
         self.cam_data = CameraData(include_depth=True, include_rgb=True, output_size=360)
 
@@ -34,8 +34,8 @@ class GraspGenerator:
         # monkey patching
         np.float = float
         print('Loading model... ')
-        self.model = torch.load(self.saved_model_path, map_location=torch.device('cpu'))
-        self.device = get_device(force_cpu=True)
+        self.model = torch.load(self.saved_model_path, map_location=self.device)
+        self.model.to(self.device)  # Ensure model parameters are on the correct device
 
     def generate(self, rgb, depth):
         x, depth_img, rgb_img = self.cam_data.get_data(rgb=rgb, depth=depth)
@@ -85,7 +85,8 @@ if __name__ == "__main__":
     np.float = float
     generator = GraspGenerator(
         saved_model_path='/robotic-grasping/trained-models/cornell-randsplit-rgbd-grconvnet3-drop1-ch32/epoch_19_iou_0.98',
-        visualize=True
+        visualize=True,
+        force_cpu=False
     )
     generator.load_model()
     generator.run_test()

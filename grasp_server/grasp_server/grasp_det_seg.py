@@ -67,7 +67,9 @@ def make_model(config):
     #     body.load_state_dict(torch.load(body_config["weights"], map_location="cpu"))
 
     weights_path = "/app/data/weights/resnet101"
-    body.load_state_dict(torch.load(weights_path, map_location="cpu"))
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    body.load_state_dict(torch.load(weights_path, map_location=device))
 
 
     # Freeze parameters
@@ -178,6 +180,8 @@ def output_pred(raw_pred, img, im_size_, visualize):
     output = []
     for i, (sem_pred, bbx_pred, cls_pred, obj_pred) in enumerate(zip(
             raw_pred["sem_pred"], raw_pred["bbx_pred"], raw_pred["cls_pred"], raw_pred["obj_pred"])):
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        sem_pred = sem_pred.to(device)
         sem_pred = np.asarray(sem_pred.detach().cpu().numpy(), dtype=np.uint8)
         # print(f"sem_pred: {sem_pred.shape}")
         # print(f"bbx_pred: {bbx_pred.shape}")
@@ -307,7 +311,7 @@ class GraspServer:
         weights_path = "/app/data/weights/model_last.pth.tar"
         log_debug("Loading snapshot from %s", weights_path)
         snapshot = resume_from_snapshot(self.model, weights_path, ["body", "rpn_head", "roi_head", "sem_head"])
-        self.visualize = False
+        self.visualize = True
 
     def detect(self, img):
         res, img = test(self.model, img, visualize=self.visualize)

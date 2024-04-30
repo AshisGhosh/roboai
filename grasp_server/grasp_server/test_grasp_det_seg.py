@@ -223,7 +223,8 @@ def make_model(config):
     body = body_fn(norm_act=norm_act_static, **body_params)
     if body_config.get("weights"):
         body_config["weights"] = "/app/data/weights/resnet101"
-        body.load_state_dict(torch.load(body_config["weights"], map_location="cpu"))
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        body.load_state_dict(torch.load(body_config["weights"], map_location=device))
 
     # Freeze parameters
     for n, m in body.named_modules():
@@ -349,8 +350,8 @@ def test(model, dataloader, **varargs):
         print('Batch no. : ' + str(it))
         with torch.no_grad():
             # Extract data
-            # img = batch["img"].cuda(device=varargs["device"], non_blocking=True)
-            img = batch["img"]
+            img = batch["img"].cuda(device=varargs["device"], non_blocking=True)
+            # img = batch["img"]
             abs_paths = batch["abs_path"]
             root_paths = batch["root_path"]
             im_size = batch["im_size"]
