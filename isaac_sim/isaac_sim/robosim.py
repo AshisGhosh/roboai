@@ -6,6 +6,7 @@ import omni
 import numpy as np
 from omni.isaac.kit import SimulationApp
 
+from roboai.enums import CameraMode
 from roboai.robot import RobotActor
 from roboai.tasks import TaskManager
 from roboai.planner import Planner
@@ -199,11 +200,17 @@ class SimManager:
         carb.log_warn(f"{REALSENSE_VIEWPORT_NAME} docked in {viewport.title}: {rs_viewport.docked}")
 
         from omni.isaac.sensor import Camera
+
+        render_product_path = rs_viewport.viewport_api.get_render_product_path()
+
         self.cameras["realsense"] = Camera(
             prim_path=CAMERA_PRIM_PATH,
             name="realsense",
             resolution=(640, 480),
+            render_product_path=render_product_path,
             )
+        self.cameras["realsense"].add_distance_to_camera_to_frame()
+        self.cameras["realsense"].add_distance_to_image_plane_to_frame()
 
         camera_rot = Gf.Rotation(Gf.Vec3d(0, 0, 1), -90) * Gf.Rotation(Gf.Vec3d(1, 0, 0), 45)
         self.cameras["agentview"] = Camera(
@@ -235,14 +242,16 @@ class SimManager:
                 self.task_manager.do_tasks()
             self.sim.update()
     
-    def get_image(self, camera_name="realsense", rgba=False, visualize=False):
+    def get_image(self, camera_name="realsense", mode=CameraMode.RGB, visualize=False):
         self.world.step(render=True)
         camera = self.cameras[camera_name]
         try:
-            if rgba: 
-                img =  camera.get_rgba()
-            else:
+            if mode == CameraMode.RGB:
                 img = camera.get_rgb()
+            if mode == CameraMode.RGBA: 
+                img =  camera.get_rgba()
+            if mode == CameraMode.DEPTH:
+                img = camera.get_depth()
             if visualize:
                 import cv2
                 img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
@@ -252,6 +261,7 @@ class SimManager:
         except Exception as e:
             print(e)
             import pdb; pdb.set_trace()
+
 
 if __name__ == "__main__":
     sim_manager = SimManager()
