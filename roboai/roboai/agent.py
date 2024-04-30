@@ -6,7 +6,7 @@ import logging
 logging.basicConfig(level=logging.WARN)
 
 from dotenv import load_dotenv
-load_dotenv()  # take environment variables from .env.
+load_dotenv("shared/.env")  # take environment variables from .env.
 
 log = logging.getLogger("roboai")
 log.setLevel(logging.INFO)
