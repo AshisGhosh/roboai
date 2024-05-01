@@ -271,22 +271,84 @@ def html_from_output_json(json_file_path, html_output_path):
             img.expandable:hover { transform: scale(1.05); }
             table { width: 100%; border-collapse: collapse; }
             th, td { border: 1px solid #37474F; padding: 12px; text-align: left; font-size: 0.9em; overflow: visible; position: relative; }
+            th.sortable:hover { cursor: pointer; }
         </style>
+        <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
         <script>
-            document.addEventListener('DOMContentLoaded', function () {
+            $(document).ready(function() {
+                var table = $('table');
+                var sortedAscending = true;
+
+                // Function to set sorting indicator
+                function setSortingIndicator(header, ascending) {
+                    table.find('th').each(function() {
+                        $(this).find('.sort-indicator').remove();
+                    });
+
+                    var indicator = ascending ? ' ▲' : ' ▼';
+                    header.append('<span class="sort-indicator">' + indicator + '</span>');
+                }
+
+                function compareFilenames(a, b) {
+                    const extractNumber = filename => parseInt(filename.match(/(\d+)/), 10);
+                    const aNumber = extractNumber(a);
+                    const bNumber = extractNumber(b);
+
+                    if (aNumber !== bNumber) {
+                        return aNumber - bNumber;
+                    }
+
+                    const aFlipped = a.includes("_flipped");
+                    const bFlipped = b.includes("_flipped");
+
+                    return aFlipped - bFlipped; // True (1) will follow False (0)
+                }
+
+                function sortTable(columnIndex, ascending, comparator) {
+                    var rows = table.find('tbody tr').toArray();
+                    rows.sort(function(a, b) {
+                        var aVal = $(a).children('td').eq(columnIndex).text().trim();
+                        var bVal = $(b).children('td').eq(columnIndex).text().trim();
+
+                        if (comparator) {
+                            return ascending ? comparator(aVal, bVal) : comparator(bVal, aVal);
+                        }
+
+                        var aValNum = parseFloat(aVal) || 0;
+                        var bValNum = parseFloat(bVal) || 0;
+                        return ascending ? aValNum - bValNum : bValNum - aValNum;
+                    });
+
+                    $.each(rows, function(index, row) {
+                        table.children('tbody').append(row);
+                    });
+                }
+
+                // Adding click event to the semscore and Run headers
+                table.find('th.sortable').on('click', function() {
+                    var columnIndex = $(this).index();
+                    sortedAscending = !sortedAscending;
+                    var comparator = columnIndex === 0 ? compareFilenames : null; // Custom comparator for filenames
+                    sortTable(columnIndex, sortedAscending, comparator);
+
+                    // Update the sorting indicator
+                    setSortingIndicator($(this), sortedAscending);
+                });
+
+                // Handle expandable images
                 document.querySelectorAll('img.expandable').forEach(img => {
                     img.onclick = function () {
-                        const cell = img.closest('td'); // Get the parent cell of the image
-                        if (img.style.width === '100px' || img.style.width === '') { // Check current state
+                        const cell = img.closest('td');
+                        if (img.style.width === '100px' || img.style.width === '') {
                             img.style.position = 'absolute';
-                            img.style.width = 'auto'; // Allow the image to grow naturally
-                            img.style.maxWidth = '100%'; // Ensure it does not exceed the screen width
-                            img.style.zIndex = '1000'; // Ensure it overlays other content
-                            cell.style.position = 'static'; // Ensure cell does not limit the image size
+                            img.style.width = 'auto';
+                            img.style.maxWidth = '100%';
+                            img.style.zIndex = '1000';
+                            cell.style.position = 'static';
                         } else {
                             img.style.position = '';
-                            img.style.width = '100px'; // Reset to thumbnail size
-                            img.style.maxWidth = ''; // Remove max width constraint
+                            img.style.width = '100px';
+                            img.style.maxWidth = '';
                             img.style.zIndex = '';
                         }
                     };
@@ -296,7 +358,10 @@ def html_from_output_json(json_file_path, html_output_path):
         '''
 
         html_table = df.to_html(escape=False, index=False)
-        html_content = f"{html_style_script}{html_table}"
+        html_table = html_table.replace('<th>Run</th>', '<th class="sortable">Run</th>')
+        html_table = html_table.replace('<th>SemScore</th>', '<th class="sortable">SemScore</th>')
+        
+        html_content = f"<head>{html_style_script}</head><body>{html_table}</body>"
 
         with open(html_output_path, 'w') as f:
             f.write(html_content)
