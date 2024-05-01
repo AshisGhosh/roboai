@@ -7,7 +7,7 @@ Enter docker:
 `docker exec -it roboai-isaac-sim-1 bash`
 
 ## Run pthon standalone (will launch sim as well)
- `./python.sh roboai/test.py`
+ `./python.sh roboai/robosim.py`
 
 ## Run jupyter
 ** requires local Nucleus server **
