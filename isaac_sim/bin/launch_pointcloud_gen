@@ -1,0 +1,2 @@
+build_humble_ws ros_utils
+ros2 launch ros_utils pointcloud_gen.launch.py

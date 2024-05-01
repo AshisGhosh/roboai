@@ -1,0 +1,2 @@
+build_humble_ws grasps_ros
+ros2 launch grasps_ros image_processor.launch.py
