@@ -25,6 +25,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'dynamic_repub = ros_utils.dynamic_repub:main'
         ],
     },
 )

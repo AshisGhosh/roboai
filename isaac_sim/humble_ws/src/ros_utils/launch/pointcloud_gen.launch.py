@@ -23,6 +23,7 @@ def generate_launch_description():
                     ('points', 'pointcloud'),
                 ],
                 parameters=[{
+                    'use_sim_time': False,
                     'queue_size': 10,
                     # 'qos': QoSProfile(
                     #             depth=10,
