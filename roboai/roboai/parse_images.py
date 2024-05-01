@@ -314,6 +314,7 @@ def html_from_output_json(json_file_path, html_output_path):
             validation_details = validation_json
             
             formatted_prompt = escape(data['prompt:']).replace("\n", "<br>")
+            prompt_details = f'<details><summary>View Prompt</summary><code class="prompt">{formatted_prompt}</code></details>'
             
             model_info_json = json.dumps(model_info, indent=4).replace("\n", "<br>")
             model_info_formatted = f"<details><summary>View Model Info</summary><pre><code>{model_info_json}</code></pre></details>"
@@ -325,9 +326,9 @@ def html_from_output_json(json_file_path, html_output_path):
                 'Image Filename': filename,
                 'Image': f'<img src="../../{filename}" alt="{filename}" class="expandable">',
                 'Model Name': model_name_table,
-                'Prompt': f'<code>{formatted_prompt}</code>',
-                'Response Message': f'<code>{response}</code>',
-                'Validation Data': f'<code>{validation_details}</code>',
+                'Prompt': prompt_details,
+                'Response Message': f'<code class="response">{response}</code>',
+                'Validation Data': f'<code class="gt">{validation_details}</code>',
                 'Final Score': score_data.get('final_score', ''),
                 'Names SemScore': score_data.get('semantic_similarity_score', ''),
                 'Count Accuracy': score_data.get('count_accuracy', ''),
@@ -341,8 +342,11 @@ def html_from_output_json(json_file_path, html_output_path):
         html_style_script = '''
         <style>
             body { background-color: #263238; color: #ECEFF1; font-family: monospace; font-size: 1.1em; }
-            pre { white-space: pre-wrap; font-size: smaller; }
+            pre { white-space: pre-wrap; font-size: smaller;}
             code { white-space: pre-wrap; background-color: black; padding: 4px; display: block; min-width: 80ch}
+            code.prompt { color: #80d4ff }
+            code.response { color: #66ff66 }
+            code.gt { color: #ffa366 }
             details summary { cursor: pointer; }
             img.expandable {width: 100px; height: auto; cursor: pointer; transition: transform 0.25s ease; }
             img.expandable:hover { transform: scale(1.05); }
