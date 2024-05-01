@@ -126,42 +126,57 @@ def apply_transformation(object_name, position, quaternion, size):
     mesh.apply_transform(transformation_matrix)
     return mesh
 
+def raytrace_distance_to_plane(mesh, plane_point, plane_normal):
+    origins = np.array(mesh.vertices)
+    directions = np.repeat([plane_normal], len(origins), axis=0)
+    d = np.dot(plane_point - origins, plane_normal) / np.dot(directions, plane_normal).reshape(-1)
+    intersections = origins + directions * d[:, np.newaxis]
+    distances = np.linalg.norm(intersections - origins, axis=1)
+    return distances.min()
+
+def raytrace_distance_between_objects(origin_mesh, target_mesh):
+    origins = np.array(origin_mesh.vertices)
+    directions = target_mesh.centroid - origins
+    directions /= np.linalg.norm(directions, axis=1)[:, np.newaxis]
+    intersector = trimesh.ray.ray_triangle.RayMeshIntersector(target_mesh)
+    intersections = intersector.intersects_location(origins, directions)
+    distances = np.linalg.norm(intersections[0] - origins[intersections[1]], axis=1) if intersections[0].size > 0 else np.inf
+    return distances.min() if distances.size > 0 else np.inf
+
 def get_metadata(sim_number):
-    """Calls for object position information and then uses raytracing to get distances between objects"""
     print(f"[Sim {sim_number}] Fetching object details and generating metadata...")
     with httpx.Client() as client:
         response = client.get("http://localhost:8000/get_object_details")
-    
     if not response.is_success:
         print(f"[Sim {sim_number}] Failed to fetch object details or empty metadata.")
         return None
-
     objects = response.json()
     if not objects:
         return None
 
-    transformed_meshes = {}
-    for obj in objects:
-        transformed_meshes[obj['name']] = apply_transformation(obj['name'], obj['pose'], obj['quaternion'], obj['size'])
+    transformed_meshes = {obj['name']: apply_transformation(obj['name'], obj['pose'], obj['quaternion'], obj['size']) for obj in objects}
 
+    results = []
     for obj in objects:
-        obj['distances'] = {}
         origin_mesh = transformed_meshes[obj['name']]
+        obj_data = {
+            "name": obj['name'],
+            "body_id": obj['body_id'],
+            "geom_id": obj['geom_id'],
+            "pose": obj['pose'],
+            "quaternion": obj['quaternion'],
+            "size": obj['size'],
+            "distances": {
+                "background_plane": raytrace_distance_to_plane(origin_mesh, np.array([-1, 0, 0]), np.array([1, 0, 0])),
+                "leftward_plane": raytrace_distance_to_plane(origin_mesh, np.array([0, -1, 0]), np.array([0, 1, 0]))
+            }
+        }
         for other_obj in objects:
-            if obj['name'] == other_obj['name']:
-                continue
-            target_mesh = transformed_meshes[other_obj['name']]
-            origins = np.array(origin_mesh.vertices)
-            directions = target_mesh.centroid - origins
-            directions /= np.linalg.norm(directions, axis=1)[:, np.newaxis]
-
-            intersector = trimesh.ray.ray_triangle.RayMeshIntersector(target_mesh)
-            intersections = intersector.intersects_location(origins, directions)
-            distances = np.linalg.norm(intersections[0] - origins[intersections[1]], axis=1) if intersections[0].size > 0 else np.inf
-
-            obj['distances'][other_obj['name']] = distances.min() if distances.size > 0 else np.inf
-
-    return objects
+            if obj['name'] != other_obj['name']:
+                target_mesh = transformed_meshes[other_obj['name']]
+                obj_data['distances'][other_obj['name']] = raytrace_distance_between_objects(origin_mesh, target_mesh)
+        results.append(obj_data)
+    return results
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Run robot simulations to generate and optionally mirror images.")

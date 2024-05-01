@@ -7,12 +7,10 @@ import argparse
 import logging
 import ollama
 import pandas as pd
+import numpy as np
+from fastembed import TextEmbedding
 
 # put in fast embed w/ mixedbread-ai/mxbai-embed-large-v1
-# num of objects
-# name of objects
-# position l-r
-# json mode
 
 from dotenv import load_dotenv
 from html import escape
@@ -75,6 +73,24 @@ def get_caption_with_image(image_path, model_name, prompt):
         logger.error(f"An unexpected error occurred: {err}")  # Log unexpected errors
         return {"error": "Unexpected error", "details": str(err)}
 
+def cosine_similarity_np(vec1, vec2):
+    dot_product = np.dot(vec1, vec2)
+    norm_vec1 = np.linalg.norm(vec1)
+    norm_vec2 = np.linalg.norm(vec2)
+    return float(dot_product / (norm_vec1 * norm_vec2))
+
+def normalize_text(data):
+    """Normalize data to be a JSON string if it's a dictionary."""
+    if isinstance(data, dict):
+        return json.dumps(data, separators=(', ', ': '))  # Convert dictionary to JSON string
+    if isinstance(data, str):
+        try:
+            json_obj = json.loads(data)  # Attempt to load string as JSON
+            return json.dumps(json_obj, separators=(', ', ': '))  # Convert back to normalized string
+        except json.JSONDecodeError:
+            pass  # Not a JSON string, treat it as a plain string
+    return data
+
 def get_dir_path(latest_symlink_path, dir_name=None):
     print(f"Latest symlink path: {latest_symlink_path}")
     print(f"Directory name: {dir_name}")
@@ -101,39 +117,78 @@ def get_dir_path(latest_symlink_path, dir_name=None):
     return dir_path
 
 def process_dir(dir_path, model_name, prompt):
-    """preloads model, makes image/prompt calls to mode, then closes model"""
+    """preloads model, makes image/prompt calls to model, then closes model; 
+    processes data for validation and semscoring via flattening json string. ex:
+    `{"objects": {"count": 4, "names": ["Bread", "Can", "Cereal", "Milk"]}}`"""
     sim_metadata_path = os.path.join(dir_path, f"{os.path.basename(dir_path)}.json")
     with open(sim_metadata_path, 'r') as file:
         sim_metadata = json.load(file)
 
     preload_model(model_name)
 
-    results = {}
+    responses = {}
+    validation_data = {}
     for filename in sorted(os.listdir(dir_path)):
         if filename.endswith(".png"):
             image_path = os.path.join(dir_path, filename)
-            # This function call blocks until the response is received
+            flip = "_flipped" in filename
+            base_filename = filename.replace('_flipped', '')
+
+            # Find corresponding metadata entry
+            metadata_entry = next((item for item in sim_metadata['runs'] if item['image_file'] == base_filename), None)
+            if not metadata_entry:
+                print(f"No metadata found for {filename}")
+                continue
+            
+            # make the api calls to the model server
             api_response = get_caption_with_image(image_path, model_name, prompt)
-            if 'response' in api_response:  # Handling direct ollama API response for 'generate' endpoint
-                results[filename] = api_response
+            responses[filename] = api_response
+
+            if 'response' in api_response:
                 print(f"Processed {filename}: {api_response.get('response', 'No content')}")
-            elif 'message' in api_response:  # Handling litellm & ollama 'chat' endpoint
+            elif 'message' in api_response:
                 message_content = api_response['message'].get('content', 'No content') if isinstance(api_response['message'], dict) else 'No content'
-                results[filename] = api_response
                 print(f"Processed {filename}: {message_content}")
             else:
                 error_message = f"Error processing {filename}: {api_response.get('error', 'Unknown error')}"
                 print(error_message)
-                results[filename] = {"error": "Failed to process image", "details": api_response}
+
+            # sort objects and create validation data
+            if metadata_entry:
+                sorted_names = sort_objects_by_leftward_plane(metadata_entry['objects'], flip=flip)
+                validation_data[filename] = {
+                    "objects": {
+                        "count": len(metadata_entry['objects']),
+                        "names": sorted_names
+                    }
+                }
 
     unload_model(model_name)
-    return results, sim_metadata
+    
+    embed_model = TextEmbedding("mixedbread-ai/mxbai-embed-large-v1")
+    sem_scores = {}
+    for filename, response in responses.items():
+        if 'response' in response:
+            response_text = normalize_text(response['response'])
+            print(f"{filename} Response:\n{response_text}") 
+            validation_text = normalize_text(validation_data.get(filename, {}))
+            print(f"{filename} validation:\n{validation_text}")
+            response_embedding = next(embed_model.embed([response_text]))
+            validation_embedding = next(embed_model.embed([validation_text]))
+            sem_scores[filename] = cosine_similarity_np(response_embedding, validation_embedding)
 
-def compare_results(results):
+    return responses, sim_metadata, validation_data, sem_scores
+
+def sort_objects_by_leftward_plane(objects, flip=False):
+    sorted_objects = sorted(objects, key=lambda x: x['distances']['leftward_plane'], reverse=flip)
+    sorted_names = [obj['name'] for obj in sorted_objects]
+    return sorted_names
+
+def compare_results(responses):
     # Placeholder for comparison logic
-    print("Comparison results (placeholder):", results)
+    print("Comparison results (placeholder):", responses)
 
-def generate_json_output(results, sim_metadata, model_info, prompt, output_file='output.json'):
+def generate_json_output(responses, sim_metadata, model_info, prompt, validation_data, sem_scores, output_file='output.json'):
     analysis_start_time = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     output_data = {
@@ -141,11 +196,13 @@ def generate_json_output(results, sim_metadata, model_info, prompt, output_file=
         "model_info": model_info,
         "analysis_start_time": analysis_start_time,
         "prompt:": prompt,
-        "results": results
+        "responses": responses,
+        "validation_data": validation_data,
+        "sem_scores": sem_scores
     }
 
     # Debugging: Log each item's type in results to check for non-serializable objects
-    for key, value in results.items():
+    for key, value in responses.items():
         logger.debug(f"Key: {key}, Type of value: {type(value)}")
 
     with open(output_file, 'w') as file:
@@ -171,10 +228,12 @@ def html_from_output_json(json_file_path, html_output_path):
         with open(json_file_path, 'r') as file:
             data = json.load(file)
 
-        results = data['results']
+        responses = data['responses']
         sim_info = data['sim_info']['runs']
+        validation_data = data['validation_data']
+        sem_scores = data['sem_scores']
         rows = []
-        for filename, content in results.items():
+        for filename, content in responses.items():
             response = escape(content.get('response', '')).replace("\n", "<br>")
             details_json = json.dumps(content, indent=4).replace("\n", "<br>")
             details = f"<details><summary>View Details</summary><pre>{details_json}</pre></details>"
@@ -182,22 +241,31 @@ def html_from_output_json(json_file_path, html_output_path):
             sim_details = next((run for run in sim_info if run['image_file'] == filename), None)
             sim_details_json = json.dumps(sim_details, indent=4).replace("\n", "<br>") if sim_details else "No sim details available"
             sim_details_formatted = f"<details><summary>View Sim Details</summary><pre><code>{sim_details_json}</code></pre></details>"
+            
+            file_validation_data = validation_data.get(filename, {})
+            validation_json = json.dumps(file_validation_data, indent=4).replace("\n", "<br>")
+            validation_details = validation_json
+            
+            formatted_prompt = escape(data['prompt:']).replace("\n", "<br>")
 
             rows.append({
                 'Run': filename.split('.')[0],
                 'Image Filename': filename,
                 'Image': f'<img src="../../{filename}" alt="{filename}" class="expandable">',
-                'Prompt': escape(data['prompt:']).replace("\n", "<br>"),
-                'Response Message': response,
+                'Prompt': f'<code>{formatted_prompt}</code>',
+                'Response Message': f'<code>{response}</code>',
+                'Validation Data': f'<code>{validation_details}</code>',
+                'SemScore': sem_scores.get(filename, ''),
                 'Full Response': details,
                 'Sim Details': sim_details_formatted
             })
         df = pd.DataFrame(rows)
-        
+
         html_style_script = '''
         <style>
             body { background-color: #263238; color: #ECEFF1; font-family: monospace; font-size: 1.1em; }
             pre { white-space: pre-wrap; font-size: smaller; }
+            code { white-space: pre-wrap; background-color: black; padding: 4px; display: block; min-width: 80ch}
             details summary { cursor: pointer; }
             img.expandable {width: 100px; height: auto; cursor: pointer; transition: transform 0.25s ease; }
             img.expandable:hover { transform: scale(1.05); }
@@ -226,7 +294,7 @@ def html_from_output_json(json_file_path, html_output_path):
             });
         </script>
         '''
-        
+
         html_table = df.to_html(escape=False, index=False)
         html_content = f"{html_style_script}{html_table}"
 
@@ -234,7 +302,7 @@ def html_from_output_json(json_file_path, html_output_path):
             f.write(html_content)
 
         print(f"HTML output generated at {html_output_path}")
-        
+
     except Exception as e:
         print(f"An error occurred while generating HTML: {e}")
 
@@ -257,27 +325,29 @@ def main():
     os.chmod(analysis_session_dir, 0o755)
 
     model_name = "llava"
-    prompt = """
-    How many objects are on the table? What are the objects? Order the objects as they appear from left to right.
+    prompt = """How many objects are on the table? What are the objects? Order the objects as they appear from left to right.
     
-    Respond using JSON. Follow the pattern: 
-    {
+Respond using JSON. Follow the pattern: 
+{
     "objects": {
-        "count": <number_of_objects>, 
-        "names": ["first object from left", "next object from left", "last object from left"]
+        "count": <number_of_objects>,
+        "names": [
+            "first object from left",
+            "next object from left", 
+            "last object from left"
+        ]
     }
-    }
-    """
+}"""
 
     model_info = get_model_info(model_name)
     if model_info:
         logger.info(f"Model Info: {model_info}")
-        results, sim_metadata = process_dir(dir_path, model_name, prompt)
-        compare_results(results)
+        responses, sim_metadata, validation_data, sem_scores = process_dir(dir_path, model_name, prompt)
+        compare_results(responses)
 
         output_json_path = os.path.join(analysis_session_dir, 'output.json')
         output_html_path = os.path.join(analysis_session_dir, 'output.html')
-        generate_json_output(results, sim_metadata, model_info, prompt, output_file=output_json_path)
+        generate_json_output(responses, sim_metadata, model_info, prompt, validation_data, sem_scores, output_file=output_json_path)
         html_from_output_json(output_json_path, output_html_path)
 
         # Set file permissions right after creation

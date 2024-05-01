@@ -211,6 +211,6 @@ services:
       - DISPLAY=${DISPLAY}
       - XAUTHORITY=/root/.Xauthority
     # command:  /bin/bash -c "while true; do sleep 30; done"
-    command: poetry run python -u -m model_server.hf_idefics
+    command: /bin/bash -c "python -u -m model_server.hf_moondream2"
     # command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
     network_mode: host
