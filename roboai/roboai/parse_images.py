@@ -182,22 +182,32 @@ def process_dir(dir_path, model_name, prompt):
     return responses, sim_metadata, validation_data, scores
 
 def sort_objects_by_leftward_plane(objects, flip=False):
-    sorted_objects = sorted(objects, key=lambda x: x['distances']['leftward_plane'], reverse=flip)
+    if flip:  # flipped images have to use rightward values rather than reverse order
+        sorted_objects = sorted(objects, key=lambda x: x['distances']['rightward_plane'])
+    else:
+        sorted_objects = sorted(objects, key=lambda x: x['distances']['leftward_plane'])
     sorted_names = [obj['name'] for obj in sorted_objects]
     return sorted_names
 
 def calculate_semantic_similarity(response_names, gt_names, embed_model):
-    sim_scores = []
-    pred_embeddings = list(embed_model.embed(response_names))
+    """For each embedding of a response name (response_embed), the cosine similarity is calculated against
+    each ground truth embedding (gt_embed).
+    
+    For each response embedding, the ground truth embedding with the highest similarity is identified
+    using max(similarities). The similarity value and the index of the best-matching ground truth embedding
+    (best_match_idx) are stored in sem_scores.
+    """
+    sem_scores = []
+    response_embeddings = list(embed_model.embed(response_names))
     gt_embeddings = list(embed_model.embed(gt_names))
     
-    for pred_embed in pred_embeddings:
-        similarities = [cosine_similarity_np(pred_embed, gt_embed) for gt_embed in gt_embeddings]
+    for response_embed in response_embeddings:
+        similarities = [cosine_similarity_np(response_embed, gt_embed) for gt_embed in gt_embeddings]
         max_sim = max(similarities)
         best_match_idx = similarities.index(max_sim)
-        sim_scores.append((max_sim, best_match_idx))
+        sem_scores.append((max_sim, best_match_idx))
     
-    return sim_scores
+    return sem_scores
 
 def calculate_count_accuracy(response_count, gt_count, response_len):
     # Internal consistency is based on the relative difference between the count and the length of the names list
@@ -215,13 +225,17 @@ def calculate_count_accuracy(response_count, gt_count, response_len):
     # The final score takes both internal consistency and the count score into account
     return max(0, internal_consistency * count_score)
 
-def calculate_order_accuracy(sim_scores):
-    n = len(sim_scores)
+def calculate_order_accuracy(sem_scores):
+    """compares the order of indices of the matched ground truth names from sem_scores. 
+    if a predicted name is matched to a ground truth name that appears earlier than another 
+    predicted name, it gets an order point.
+    """
+    n = len(sem_scores)
     order_points = 0
     
     for i in range(n):
         for j in range(i + 1, n):
-            if sim_scores[i][1] < sim_scores[j][1]:
+            if sem_scores[i][1] < sem_scores[j][1]:
                 order_points += 1
     
     max_points = n * (n - 1) / 2
@@ -229,10 +243,10 @@ def calculate_order_accuracy(sim_scores):
     return order_accuracy
 
 def evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_count):
-    sim_scores = calculate_semantic_similarity(response_names, gt_names, embed_model)
-    order_accuracy = calculate_order_accuracy(sim_scores)
+    sem_scores = calculate_semantic_similarity(response_names, gt_names, embed_model)
+    order_accuracy = calculate_order_accuracy(sem_scores)
     count_accuracy = calculate_count_accuracy(response_count, gt_count, len(response_names))
-    semantic_similarity_score = sum([score[0] for score in sim_scores]) / len(sim_scores)
+    avg_sem_score = sum([score[0] for score in sem_scores]) / len(sem_scores)
     
     weight_order = 0.4
     weight_count = 0.2
@@ -240,12 +254,12 @@ def evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_c
 
     final_score = (weight_order * order_accuracy + 
                    weight_count * count_accuracy + 
-                   weight_similarity * semantic_similarity_score)
+                   weight_similarity * avg_sem_score)
 
     return {
         "order_accuracy": order_accuracy,
         "count_accuracy": count_accuracy,
-        "semantic_similarity_score": semantic_similarity_score,
+        "avg_sem_score": avg_sem_score,
         "final_score": final_score
     }
 
@@ -330,7 +344,7 @@ def html_from_output_json(json_file_path, html_output_path):
                 'Response Message': f'<code class="response">{response}</code>',
                 'Validation Data': f'<code class="gt">{validation_details}</code>',
                 'Final Score': score_data.get('final_score', ''),
-                'Names SemScore': score_data.get('semantic_similarity_score', ''),
+                'Names SemScore': score_data.get('avg_sem_score', ''),
                 'Count Accuracy': score_data.get('count_accuracy', ''),
                 'Order Accuracy': score_data.get('order_accuracy', ''),
                 'Full Response': details,

@@ -168,7 +168,9 @@ def get_metadata(sim_number):
             "size": obj['size'],
             "distances": {
                 "background_plane": raytrace_distance_to_plane(origin_mesh, np.array([-1, 0, 0]), np.array([1, 0, 0])),
-                "leftward_plane": raytrace_distance_to_plane(origin_mesh, np.array([0, -1, 0]), np.array([0, 1, 0]))
+                "foreground_plane": raytrace_distance_to_plane(origin_mesh, np.array([1, 0, 0]), np.array([-1, 0, 0])),
+                "leftward_plane": raytrace_distance_to_plane(origin_mesh, np.array([0, -1, 0]), np.array([0, 1, 0])),
+                "rightward_plane": raytrace_distance_to_plane(origin_mesh, np.array([0, 1, 0]), np.array([0, -1, 0])),
             }
         }
         for other_obj in objects:
