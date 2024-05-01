@@ -21,21 +21,28 @@ logger = logging.getLogger("roboai")
 load_dotenv("shared/.env")
 
 def get_model_info(model_name):
-    model_data = ollama.show(model_name)
-        # Construct a dictionary with the relevant fields including model name
+    """combines data from ollama list and show calls to create detailed model info"""
+    model_list_data = ollama.list()
+    model_data_entry = next((model for model in model_list_data['models'] if model['name'] == model_name), None)
+    
+    if not model_data_entry:
+        logger.error(f"Model {model_name} not found in the list.")
+        return None
+
+    additional_data = ollama.show(model_name)
+    
     model_info = {
-        "name": model_name,
-        "modelfile": model_data.get("modelfile"),
-        "parameters": model_data.get("parameters"),
-        "template": model_data.get("template"),
-        "details": {
-            "format": model_data.get("details", {}).get("format"),
-            "family": model_data.get("details", {}).get("family"),
-            "families": model_data.get("details", {}).get("families"),
-            "parameter_size": model_data.get("details", {}).get("parameter_size"),
-            "quantization_level": model_data.get("details", {}).get("quantization_level")
-        }
+        "name": model_data_entry.get("name"),
+        "model": model_data_entry.get("model"),
+        "modified_at": model_data_entry.get("modified_at"),
+        "size": model_data_entry.get("size"),
+        "digest": model_data_entry.get("digest"),
+        "details": model_data_entry.get("details", {}),
+        "modelfile": additional_data.get("modelfile"),
+        "parameters": additional_data.get("parameters"),
+        "template": additional_data.get("template")
     }
+    
     return model_info
 
 def preload_model(model_name):
@@ -193,7 +200,20 @@ def calculate_semantic_similarity(response_names, gt_names, embed_model):
     return sim_scores
 
 def calculate_count_accuracy(response_count, gt_count, response_len):
-    return int(response_count == response_len) * (min(response_count / gt_count, response_len / gt_count) if gt_count != 0 else 0)
+    # Internal consistency is based on the relative difference between the count and the length of the names list
+    if response_len > 0:
+        internal_consistency = 1 - (abs(response_count - response_len) / response_len)
+    else:
+        internal_consistency = 0 if response_count != 0 else 1  # Both are zero
+
+    # Calculate the count score based on the difference between the response and ground truth counts
+    if gt_count != 0:
+        count_score = 1 - (abs(response_count - gt_count) / gt_count)
+    else:
+        count_score = 0 if response_count != 0 else 1  # Both are zero
+
+    # The final score takes both internal consistency and the count score into account
+    return max(0, internal_consistency * count_score)
 
 def calculate_order_accuracy(sim_scores):
     n = len(sim_scores)
@@ -277,11 +297,13 @@ def html_from_output_json(json_file_path, html_output_path):
         sim_info = data['sim_info']['runs']
         validation_data = data['validation_data']
         scores = data['scores']
+        model_info = data['model_info']
+        
         rows = []
         for filename, content in responses.items():
             response = escape(content.get('response', '')).replace("\n", "<br>")
             details_json = json.dumps(content, indent=4).replace("\n", "<br>")
-            details = f"<details><summary>View Details</summary><pre>{details_json}</pre></details>"
+            details = f"<details><summary>View Details</summary><pre><code>{details_json}</code></pre></details>"
 
             sim_details = next((run for run in sim_info if run['image_file'] == filename), None)
             sim_details_json = json.dumps(sim_details, indent=4).replace("\n", "<br>") if sim_details else "No sim details available"
@@ -292,12 +314,17 @@ def html_from_output_json(json_file_path, html_output_path):
             validation_details = validation_json
             
             formatted_prompt = escape(data['prompt:']).replace("\n", "<br>")
+            
+            model_info_json = json.dumps(model_info, indent=4).replace("\n", "<br>")
+            model_info_formatted = f"<details><summary>View Model Info</summary><pre><code>{model_info_json}</code></pre></details>"
+            model_name_table = model_info.get('name', {})
 
             score_data = scores.get(filename, {})
             rows.append({
                 'Run': filename.split('.')[0],
                 'Image Filename': filename,
                 'Image': f'<img src="../../{filename}" alt="{filename}" class="expandable">',
+                'Model Name': model_name_table,
                 'Prompt': f'<code>{formatted_prompt}</code>',
                 'Response Message': f'<code>{response}</code>',
                 'Validation Data': f'<code>{validation_details}</code>',
@@ -306,7 +333,8 @@ def html_from_output_json(json_file_path, html_output_path):
                 'Count Accuracy': score_data.get('count_accuracy', ''),
                 'Order Accuracy': score_data.get('order_accuracy', ''),
                 'Full Response': details,
-                'Sim Details': sim_details_formatted
+                'Sim Details': sim_details_formatted,
+                'Model Info': model_info_formatted
             })
         df = pd.DataFrame(rows)
 
@@ -428,20 +456,7 @@ def main():
     parser.add_argument("dir_name", nargs="?", help="Name of the dir containing the dataset. If not specified, the script will use the 'latest' symlink.")
     args = parser.parse_args()
 
-    latest_symlink_path = "/app/shared/data/image_exports/latest"
-    dir_path = get_dir_path(latest_symlink_path, args.dir_name)
-
-    analysis_dir = os.path.join(dir_path, "analysis")
-    if not os.path.exists(analysis_dir):
-        os.makedirs(analysis_dir)
-        os.chmod(analysis_dir, 0o755)
-
-    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
-    analysis_session_dir = os.path.join(analysis_dir, timestamp)
-    os.makedirs(analysis_session_dir)
-    os.chmod(analysis_session_dir, 0o755)
-
-    model_name = "llava"
+    model_name = "llava:latest"
     prompt = """How many objects are on the table? What are the objects? Order the objects as they appear from left to right.
     
 Respond using JSON. Follow the pattern: 
@@ -455,6 +470,20 @@ Respond using JSON. Follow the pattern:
         ]
     }
 }"""
+
+    latest_symlink_path = "/app/shared/data/image_exports/latest"
+    dir_path = get_dir_path(latest_symlink_path, args.dir_name)
+
+    analysis_dir = os.path.join(dir_path, "analysis")
+    if not os.path.exists(analysis_dir):
+        os.makedirs(analysis_dir)
+        os.chmod(analysis_dir, 0o755)
+
+    timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+    model_name_dir = model_name.replace(':', '-')
+    analysis_session_dir = os.path.join(analysis_dir, f"{timestamp}_{model_name_dir}")
+    os.makedirs(analysis_session_dir)
+    os.chmod(analysis_session_dir, 0o755)
 
     model_info = get_model_info(model_name)
     if model_info:
