@@ -57,9 +57,17 @@ RUN apt install -y python3-colcon-common-extensions \
                 python3-rosinstall-generator
 
 COPY ./isaac_sim/humble_ws /isaac-sim/humble_ws
+RUN chmod -R 777 /isaac-sim/humble_ws
 SHELL ["/bin/bash", "-c"]
 RUN source /opt/ros/humble/setup.bash && \
          cd humble_ws && \
          colcon build
 RUN echo "source /isaac-sim/humble_ws/install/setup.bash" >> /root/.bashrc
-ENV PYTHONPATH=/isaac-sim:$PYTHONPATH
+RUN echo "source /isaac-sim/setup_python_env.sh" >> /root/.bashrc
+ENV PYTHONPATH=/isaac-sim:/isaac-sim/roboai:$PYTHONPATH
+COPY ./isaac_sim/bin /isaac-sim/roboai/bin
+ENV PATH=/isaac-sim/roboai/bin:$PATH
+
+RUN apt-get update && apt-get install -y \
+                ros-humble-depth-image-proc
+

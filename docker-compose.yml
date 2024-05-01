@@ -286,6 +286,8 @@ services:
       - ~/docker/isaac-sim/documents:/root/Documents:rw
       - ./isaac_sim/isaac_sim:/isaac-sim/roboai/
       - ./shared:/isaac-sim/roboai/shared
+      - ./isaac_sim/humble_ws/src:/isaac-sim/humble_ws/src
+      - ./isaac_sim/bin:/isaac-sim/roboai/bin
     environment:
       - DISPLAY=${DISPLAY}
       - XAUTHORITY=/root/.Xauthority
