@@ -117,9 +117,6 @@ def get_dir_path(latest_symlink_path, dir_name=None):
     return dir_path
 
 def process_dir(dir_path, model_name, prompt):
-    """preloads model, makes image/prompt calls to model, then closes model; 
-    processes data for validation and semscoring via flattening json string. ex:
-    `{"objects": {"count": 4, "names": ["Bread", "Can", "Cereal", "Milk"]}}`"""
     sim_metadata_path = os.path.join(dir_path, f"{os.path.basename(dir_path)}.json")
     with open(sim_metadata_path, 'r') as file:
         sim_metadata = json.load(file)
@@ -134,13 +131,11 @@ def process_dir(dir_path, model_name, prompt):
             flip = "_flipped" in filename
             base_filename = filename.replace('_flipped', '')
 
-            # Find corresponding metadata entry
             metadata_entry = next((item for item in sim_metadata['runs'] if item['image_file'] == base_filename), None)
             if not metadata_entry:
                 print(f"No metadata found for {filename}")
                 continue
-            
-            # make the api calls to the model server
+
             api_response = get_caption_with_image(image_path, model_name, prompt)
             responses[filename] = api_response
 
@@ -153,7 +148,6 @@ def process_dir(dir_path, model_name, prompt):
                 error_message = f"Error processing {filename}: {api_response.get('error', 'Unknown error')}"
                 print(error_message)
 
-            # sort objects and create validation data
             if metadata_entry:
                 sorted_names = sort_objects_by_leftward_plane(metadata_entry['objects'], flip=flip)
                 validation_data[filename] = {
@@ -164,31 +158,82 @@ def process_dir(dir_path, model_name, prompt):
                 }
 
     unload_model(model_name)
-    
+
     embed_model = TextEmbedding("mixedbread-ai/mxbai-embed-large-v1")
-    sem_scores = {}
+    scores = {}
     for filename, response in responses.items():
         if 'response' in response:
-            response_text = normalize_text(response['response'])
-            print(f"{filename} Response:\n{response_text}") 
-            validation_text = normalize_text(validation_data.get(filename, {}))
-            print(f"{filename} validation:\n{validation_text}")
-            response_embedding = next(embed_model.embed([response_text]))
-            validation_embedding = next(embed_model.embed([validation_text]))
-            sem_scores[filename] = cosine_similarity_np(response_embedding, validation_embedding)
+            response_obj = json.loads(response['response'])
+            validation_obj = validation_data.get(filename, {})
 
-    return responses, sim_metadata, validation_data, sem_scores
+            response_names = response_obj['objects']['names']
+            response_count = response_obj['objects']['count']
+            gt_names = validation_obj['objects']['names']
+            gt_count = validation_obj['objects']['count']
+
+            scores[filename] = evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_count)
+    return responses, sim_metadata, validation_data, scores
 
 def sort_objects_by_leftward_plane(objects, flip=False):
     sorted_objects = sorted(objects, key=lambda x: x['distances']['leftward_plane'], reverse=flip)
     sorted_names = [obj['name'] for obj in sorted_objects]
     return sorted_names
 
+def calculate_semantic_similarity(response_names, gt_names, embed_model):
+    sim_scores = []
+    pred_embeddings = list(embed_model.embed(response_names))
+    gt_embeddings = list(embed_model.embed(gt_names))
+    
+    for pred_embed in pred_embeddings:
+        similarities = [cosine_similarity_np(pred_embed, gt_embed) for gt_embed in gt_embeddings]
+        max_sim = max(similarities)
+        best_match_idx = similarities.index(max_sim)
+        sim_scores.append((max_sim, best_match_idx))
+    
+    return sim_scores
+
+def calculate_count_accuracy(response_count, gt_count, response_len):
+    return int(response_count == response_len) * (min(response_count / gt_count, response_len / gt_count) if gt_count != 0 else 0)
+
+def calculate_order_accuracy(sim_scores):
+    n = len(sim_scores)
+    order_points = 0
+    
+    for i in range(n):
+        for j in range(i + 1, n):
+            if sim_scores[i][1] < sim_scores[j][1]:
+                order_points += 1
+    
+    max_points = n * (n - 1) / 2
+    order_accuracy = order_points / max_points if max_points != 0 else 0
+    return order_accuracy
+
+def evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_count):
+    sim_scores = calculate_semantic_similarity(response_names, gt_names, embed_model)
+    order_accuracy = calculate_order_accuracy(sim_scores)
+    count_accuracy = calculate_count_accuracy(response_count, gt_count, len(response_names))
+    semantic_similarity_score = sum([score[0] for score in sim_scores]) / len(sim_scores)
+    
+    weight_order = 0.4
+    weight_count = 0.2
+    weight_similarity = 0.4
+
+    final_score = (weight_order * order_accuracy + 
+                   weight_count * count_accuracy + 
+                   weight_similarity * semantic_similarity_score)
+
+    return {
+        "order_accuracy": order_accuracy,
+        "count_accuracy": count_accuracy,
+        "semantic_similarity_score": semantic_similarity_score,
+        "final_score": final_score
+    }
+
 def compare_results(responses):
     # Placeholder for comparison logic
     print("Comparison results (placeholder):", responses)
 
-def generate_json_output(responses, sim_metadata, model_info, prompt, validation_data, sem_scores, output_file='output.json'):
+def generate_json_output(responses, sim_metadata, model_info, prompt, validation_data, scores, output_file='output.json'):
     analysis_start_time = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     output_data = {
@@ -198,7 +243,7 @@ def generate_json_output(responses, sim_metadata, model_info, prompt, validation
         "prompt:": prompt,
         "responses": responses,
         "validation_data": validation_data,
-        "sem_scores": sem_scores
+        "scores": scores
     }
 
     # Debugging: Log each item's type in results to check for non-serializable objects
@@ -231,7 +276,7 @@ def html_from_output_json(json_file_path, html_output_path):
         responses = data['responses']
         sim_info = data['sim_info']['runs']
         validation_data = data['validation_data']
-        sem_scores = data['sem_scores']
+        scores = data['scores']
         rows = []
         for filename, content in responses.items():
             response = escape(content.get('response', '')).replace("\n", "<br>")
@@ -248,6 +293,7 @@ def html_from_output_json(json_file_path, html_output_path):
             
             formatted_prompt = escape(data['prompt:']).replace("\n", "<br>")
 
+            score_data = scores.get(filename, {})
             rows.append({
                 'Run': filename.split('.')[0],
                 'Image Filename': filename,
@@ -255,7 +301,10 @@ def html_from_output_json(json_file_path, html_output_path):
                 'Prompt': f'<code>{formatted_prompt}</code>',
                 'Response Message': f'<code>{response}</code>',
                 'Validation Data': f'<code>{validation_details}</code>',
-                'SemScore': sem_scores.get(filename, ''),
+                'Final Score': score_data.get('final_score', ''),
+                'Names SemScore': score_data.get('semantic_similarity_score', ''),
+                'Count Accuracy': score_data.get('count_accuracy', ''),
+                'Order Accuracy': score_data.get('order_accuracy', ''),
                 'Full Response': details,
                 'Sim Details': sim_details_formatted
             })
@@ -359,7 +408,10 @@ def html_from_output_json(json_file_path, html_output_path):
 
         html_table = df.to_html(escape=False, index=False)
         html_table = html_table.replace('<th>Run</th>', '<th class="sortable">Run</th>')
-        html_table = html_table.replace('<th>SemScore</th>', '<th class="sortable">SemScore</th>')
+        html_table = html_table.replace('<th>Final Score</th>', '<th class="sortable">Final Score</th>')
+        html_table = html_table.replace('<th>Names SemScore</th>', '<th class="sortable">Names SemScore</th>')
+        html_table = html_table.replace('<th>Count Accuracy</th>', '<th class="sortable">Count Accuracy</th>')
+        html_table = html_table.replace('<th>Order Accuracy</th>', '<th class="sortable">Order Accuracy</th>')
         
         html_content = f"<head>{html_style_script}</head><body>{html_table}</body>"
 
@@ -407,12 +459,12 @@ Respond using JSON. Follow the pattern:
     model_info = get_model_info(model_name)
     if model_info:
         logger.info(f"Model Info: {model_info}")
-        responses, sim_metadata, validation_data, sem_scores = process_dir(dir_path, model_name, prompt)
+        responses, sim_metadata, validation_data, scores = process_dir(dir_path, model_name, prompt)
         compare_results(responses)
 
         output_json_path = os.path.join(analysis_session_dir, 'output.json')
         output_html_path = os.path.join(analysis_session_dir, 'output.html')
-        generate_json_output(responses, sim_metadata, model_info, prompt, validation_data, sem_scores, output_file=output_json_path)
+        generate_json_output(responses, sim_metadata, model_info, prompt, validation_data, scores, output_file=output_json_path)
         html_from_output_json(output_json_path, output_html_path)
 
         # Set file permissions right after creation
