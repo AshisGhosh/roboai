@@ -8,10 +8,8 @@ import logging
 import ollama
 import pandas as pd
 import numpy as np
+
 from fastembed import TextEmbedding
-
-# put in fast embed w/ mixedbread-ai/mxbai-embed-large-v1
-
 from dotenv import load_dotenv
 from html import escape
 
@@ -190,7 +188,8 @@ def sort_objects_by_leftward_plane(objects, flip=False):
     return sorted_names
 
 def calculate_semantic_similarity(response_names, gt_names, embed_model):
-    """For each embedding of a response name (response_embed), the cosine similarity is calculated against
+    """
+    For each embedding of a response name (response_embed), the cosine similarity is calculated against
     each ground truth embedding (gt_embed).
     
     For each response embedding, the ground truth embedding with the highest similarity is identified
@@ -201,11 +200,11 @@ def calculate_semantic_similarity(response_names, gt_names, embed_model):
     response_embeddings = list(embed_model.embed(response_names))
     gt_embeddings = list(embed_model.embed(gt_names))
     
-    for response_embed in response_embeddings:
+    for response_name, response_embed in zip(response_names, response_embeddings):
         similarities = [cosine_similarity_np(response_embed, gt_embed) for gt_embed in gt_embeddings]
         max_sim = max(similarities)
         best_match_idx = similarities.index(max_sim)
-        sem_scores.append((max_sim, best_match_idx))
+        sem_scores.append((response_name, best_match_idx, max_sim))
     
     return sem_scores
 
@@ -225,32 +224,38 @@ def calculate_count_accuracy(response_count, gt_count, response_len):
     # The final score takes both internal consistency and the count score into account
     return max(0, internal_consistency * count_score)
 
-def calculate_order_accuracy(sem_scores):
-    """compares the order of indices of the matched ground truth names from sem_scores. 
-    if a predicted name is matched to a ground truth name that appears earlier than another 
-    predicted name, it gets an order point.
+def calculate_order_accuracy(sem_scores, penalty_scale=0.25):
+    """
+    Adjusted scoring function that considers partial matches and scales penalties
+    based on semantic similarity scores.
     """
     n = len(sem_scores)
     order_points = 0
-    
+    total_penalty = 0
+
     for i in range(n):
         for j in range(i + 1, n):
             if sem_scores[i][1] < sem_scores[j][1]:
                 order_points += 1
-    
+
+        # Apply a penalty scaled inversely to similarity score
+        similarity_score = sem_scores[i][2]
+        penalty = penalty_scale * (1 - similarity_score)
+        total_penalty += penalty
+
     max_points = n * (n - 1) / 2
-    order_accuracy = order_points / max_points if max_points != 0 else 0
-    return order_accuracy
+    order_accuracy = (order_points / max_points if max_points != 0 else 0) - total_penalty
+    return max(order_accuracy, 0)  # Ensure order_accuracy doesn't go below 0
 
 def evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_count):
     sem_scores = calculate_semantic_similarity(response_names, gt_names, embed_model)
     order_accuracy = calculate_order_accuracy(sem_scores)
     count_accuracy = calculate_count_accuracy(response_count, gt_count, len(response_names))
-    avg_sem_score = sum([score[0] for score in sem_scores]) / len(sem_scores)
+    avg_sem_score = sum([score[2] for score in sem_scores]) / len(sem_scores)
     
-    weight_order = 0.4
+    weight_order = 0.2
     weight_count = 0.2
-    weight_similarity = 0.4
+    weight_similarity = 0.6
 
     final_score = (weight_order * order_accuracy + 
                    weight_count * count_accuracy + 
