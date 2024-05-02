@@ -311,7 +311,7 @@ class GraspServer:
         weights_path = "/app/data/weights/model_last.pth.tar"
         log_debug("Loading snapshot from %s", weights_path)
         snapshot = resume_from_snapshot(self.model, weights_path, ["body", "rpn_head", "roi_head", "sem_head"])
-        self.visualize = True
+        self.visualize = False
 
     def detect(self, img):
         res, img = test(self.model, img, visualize=self.visualize)

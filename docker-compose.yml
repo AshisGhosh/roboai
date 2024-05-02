@@ -176,10 +176,10 @@ services:
   
   grasp-server:
     build:
-      context: ./grasp_server
+      context: ./grasping/grasp_server
       dockerfile: Dockerfile
     volumes:
-      - ./grasp_server:/app
+      - ./grasping/grasp_server:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
       - ./shared:/app/shared
     environment:
@@ -194,10 +194,10 @@ services:
   
   robotic-grasping-server:
     build:
-      context: ./robotic_grasping_server
+      context: ./grasping/robotic_grasping_server
       dockerfile: Dockerfile
     volumes:
-      - ./robotic_grasping_server:/app
+      - ./grasping/robotic_grasping_server:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
       - ./shared:/app/shared
     environment:
@@ -210,10 +210,10 @@ services:
 
   scale-grasp:
     build:
-      context: ./scale_balanced_grasp
+      context: ./grasping/scale_balanced_grasp
       dockerfile: Dockerfile
     volumes:
-      - ./scale_balanced_grasp:/app
+      - ./grasping/scale_balanced_grasp:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
       - ./shared:/app/shared
     environment:
