@@ -302,3 +302,33 @@ services:
             - driver: nvidia
               count: 1
               capabilities: [gpu]
+  
+  franka:
+    image: franka_isaac_moveit_tutorial
+    build:
+      context: ./franka_moveit
+      dockerfile: Dockerfile
+    # Interactive shell
+    stdin_open: true
+    tty: true
+    # Networking and IPC for ROS 2
+    network_mode: host
+    ipc: host
+    privileged: true
+    environment:
+      # Default the ROS_DOMAIN_ID to zero if not set on the host
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      # Allows graphical programs in the container
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      # Allows graphical programs in the container
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority
+      - ./config:/root/ws_moveit/src/moveit2_tutorials/doc/how_to_guides/isaac_panda/config
+    command: ros2 launch moveit2_tutorials isaac_demo.launch.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
