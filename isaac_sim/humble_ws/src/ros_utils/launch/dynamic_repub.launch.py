@@ -7,6 +7,9 @@ def generate_launch_description():
             package='ros_utils',
             executable='dynamic_repub',
             name='dynamic_repub',
-            parameters=[{'topics': ['/pointcloud']}],  # Ensure this matches the expected type
+            parameters=[{'topics': ['/pointcloud',
+                                    '/instance_segmentation',
+                                    '/agentview/instance_segmentation',
+                                    ]}],  # Ensure this matches the expected type
         ),
     ])

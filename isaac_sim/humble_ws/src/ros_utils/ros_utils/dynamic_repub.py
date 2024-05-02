@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
+import sys
+import numpy as np
 
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, QoSReliabilityPolicy, QoSDurabilityPolicy
 import rcl_interfaces
+
+from sensor_msgs.msg import Image
 
 class DynamicRepub(Node):
     def __init__(self):
@@ -66,7 +70,28 @@ class DynamicRepub(Node):
         if hasattr(msg, 'header') and hasattr(msg.header, 'stamp'):
             msg.header.stamp = self.get_clock().now().to_msg()
 
+        if type(msg) == Image:
+            if msg.encoding == '32SC1':
+                msg = self._reencode_image(msg)
+
         self.custom_publishers[repub_topic_name].publish(msg)
+    
+    def _reencode_image(self, image):
+        if image.encoding == '32SC1':
+            # image.encoding = '32FC1'
+            min_value = None
+            max_value = None
+            UPDATE_MIN = min_value is None
+            UPDATE_MAX = max_value is None
+            min_value = np.inf if min_value is None else min_value
+            max_value = -np.inf if max_value is None else max_value
+            array = np.frombuffer(image.data, dtype=np.float32).reshape(image.height, image.width, -1)
+            min_value = min(np.min(array).item(), min_value) if UPDATE_MIN else min_value
+            max_value = max(np.max(array).item(), max_value) if UPDATE_MAX else max_value
+            array = np.clip((array - min_value) / (max_value - min_value + sys.float_info.min) * 65535, 0, 65535)
+            image.data = array.astype(np.uint16).tobytes()
+            image.encoding = "mono16"         
+        return image
 
 def main(args=None):
     rclpy.init(args=args)

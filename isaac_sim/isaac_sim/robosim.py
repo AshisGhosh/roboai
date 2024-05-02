@@ -65,7 +65,7 @@ class SimManager:
         self._load_stage()
         self._load_robot()
         self._load_objects()
-        self._create_markers()
+        # self._create_markers()
         self._init_cameras()
         self._enable_ros2_bridge_ext()
         self._load_omnigraph()
@@ -147,6 +147,7 @@ class SimManager:
             orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(1, 0, 0), -90)),
             usd_path=self.assets_root_path
             + "/Isaac/Props/YCB/Axis_Aligned_Physics/003_cracker_box.usd",
+            semantic_label="cracker_box"
         )
         prims.create_prim(
             WORLD_STAGE_PATH + "/sugar_box",
@@ -156,6 +157,7 @@ class SimManager:
             orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 1, 0), -90)),
             usd_path=self.assets_root_path
             + "/Isaac/Props/YCB/Axis_Aligned_Physics/004_sugar_box.usd",
+            semantic_label="sugar_box"
         )
         prims.create_prim(
             WORLD_STAGE_PATH + "/soup_can",
@@ -165,6 +167,7 @@ class SimManager:
             orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(1, 0, 0), -90)),
             usd_path=self.assets_root_path
             + "/Isaac/Props/YCB/Axis_Aligned_Physics/005_tomato_soup_can.usd",
+            semantic_label="soup_can"
         )
         prims.create_prim(
             WORLD_STAGE_PATH + "/mustard_bottle",
@@ -174,6 +177,7 @@ class SimManager:
             orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(1, 0, 0), -90)),
             usd_path=self.assets_root_path
             + "/Isaac/Props/YCB/Axis_Aligned_Physics/006_mustard_bottle.usd",
+            semantic_label="mustard_bottle"
         )
         carb.log_warn(f"Time taken to create prims: {time.time() - start_time} seconds")
         self.sim.update()
@@ -203,7 +207,7 @@ class SimManager:
     def _init_cameras(self):
         viewports.create_viewport_for_camera(REALSENSE_VIEWPORT_NAME, CAMERA_PRIM_PATH)
 
-        realsense_prim = camera_prim = UsdGeom.Camera(
+        realsense_prim = UsdGeom.Camera(
             stage.get_current_stage().GetPrimAtPath(CAMERA_PRIM_PATH)
         )
         realsense_prim.GetHorizontalApertureAttr().Set(20.955)
@@ -236,8 +240,16 @@ class SimManager:
             name="agentview",
             resolution=(1024, 768),
             position=(0, 2.75, 2.67),
-            orientation=rotations.gf_rotation_to_np_array(camera_rot)
-            )        
+            orientation=rotations.gf_rotation_to_np_array(camera_rot),
+            )   
+
+        # viewports.create_viewport_for_camera("agentview", "/World/agentview_camera")
+        # agentview_prim = UsdGeom.Camera(
+        #     stage.get_current_stage().GetPrimAtPath("/World/agentview_camera")
+        # )
+        # agentview_viewport = omni.ui.Workspace.get_window("agentview")
+        # render_product_path = agentview_viewport.viewport_api.get_render_product_path()
+        # self.cameras["agentview"].initialize(render_product_path)     
         
         self.world.reset()
         for cam in self.cameras.values():
@@ -278,6 +290,7 @@ class SimManager:
                         ),
                         ("PublishClock", "omni.isaac.ros2_bridge.ROS2PublishClock"),
                         ("OnTick", "omni.graph.action.OnTick"),
+                        # Realsense Camera Helper
                         ("createViewport", "omni.isaac.core_nodes.IsaacCreateViewport"),
                         (
                             "getRenderProduct",
@@ -287,6 +300,33 @@ class SimManager:
                         ("cameraHelperRgb", "omni.isaac.ros2_bridge.ROS2CameraHelper"),
                         ("cameraHelperInfo", "omni.isaac.ros2_bridge.ROS2CameraHelper"),
                         ("cameraHelperDepth", "omni.isaac.ros2_bridge.ROS2CameraHelper"),
+                        ("cameraHelperInstanceSegmentation", "omni.isaac.ros2_bridge.ROS2CameraHelper"),
+                        # Agent View Camera Helper
+                        ("createAgentView", "omni.isaac.core_nodes.IsaacCreateViewport"),
+                        (
+                            "getRenderProductAgentView",
+                            "omni.isaac.core_nodes.IsaacGetViewportRenderProduct",
+                        ),
+                        (
+                            "setCameraAgentView",
+                            "omni.isaac.core_nodes.IsaacSetCameraOnRenderProduct",
+                        ),
+                        (
+                            "cameraHelperAgentViewRgb",
+                            "omni.isaac.ros2_bridge.ROS2CameraHelper",
+                        ),
+                        (
+                            "cameraHelperAgentViewInfo",
+                            "omni.isaac.ros2_bridge.ROS2CameraHelper",
+                        ),
+                        (
+                            "cameraHelperAgentViewDepth",
+                            "omni.isaac.ros2_bridge.ROS2CameraHelper",
+                        ),
+                        (
+                            "cameraHelperAgentViewInstanceSegmentation",
+                            "omni.isaac.ros2_bridge.ROS2CameraHelper",
+                        ),
                     ],
                     og.Controller.Keys.CONNECT: [
                         ("OnImpulseEvent.outputs:execOut", "PublishJointState.inputs:execIn"),
@@ -320,6 +360,7 @@ class SimManager:
                             "SubscribeJointState.outputs:effortCommand",
                             "ArticulationController.inputs:effortCommand",
                         ),
+                        # Realsense Camera Key Connects
                         ("OnTick.outputs:tick", "createViewport.inputs:execIn"),
                         ("createViewport.outputs:execOut", "getRenderProduct.inputs:execIn"),
                         ("createViewport.outputs:viewport", "getRenderProduct.inputs:viewport"),
@@ -331,9 +372,11 @@ class SimManager:
                         ("setCamera.outputs:execOut", "cameraHelperRgb.inputs:execIn"),
                         ("setCamera.outputs:execOut", "cameraHelperInfo.inputs:execIn"),
                         ("setCamera.outputs:execOut", "cameraHelperDepth.inputs:execIn"),
+                        ("setCamera.outputs:execOut", "cameraHelperInstanceSegmentation.inputs:execIn"),
                         ("Context.outputs:context", "cameraHelperRgb.inputs:context"),
                         ("Context.outputs:context", "cameraHelperInfo.inputs:context"),
                         ("Context.outputs:context", "cameraHelperDepth.inputs:context"),
+                        ("Context.outputs:context", "cameraHelperInstanceSegmentation.inputs:context"),
                         (
                             "getRenderProduct.outputs:renderProductPath",
                             "cameraHelperRgb.inputs:renderProductPath",
@@ -346,6 +389,43 @@ class SimManager:
                             "getRenderProduct.outputs:renderProductPath",
                             "cameraHelperDepth.inputs:renderProductPath",
                         ),
+                        (
+                            "getRenderProduct.outputs:renderProductPath",
+                            "cameraHelperInstanceSegmentation.inputs:renderProductPath",
+                        ),
+                        # Agent View Camera Key Connects
+                        ("OnTick.outputs:tick", "createAgentView.inputs:execIn"),
+                        ("createAgentView.outputs:execOut", "getRenderProductAgentView.inputs:execIn"),
+                        ("createAgentView.outputs:viewport", "getRenderProductAgentView.inputs:viewport"),
+                        ("getRenderProductAgentView.outputs:execOut", "setCameraAgentView.inputs:execIn"),
+                        (
+                            "getRenderProductAgentView.outputs:renderProductPath",
+                            "setCameraAgentView.inputs:renderProductPath",
+                        ),
+                        ("setCameraAgentView.outputs:execOut", "cameraHelperAgentViewRgb.inputs:execIn"),
+                        ("setCameraAgentView.outputs:execOut", "cameraHelperAgentViewInfo.inputs:execIn"),
+                        ("setCameraAgentView.outputs:execOut", "cameraHelperAgentViewDepth.inputs:execIn"),
+                        ("setCameraAgentView.outputs:execOut", "cameraHelperAgentViewInstanceSegmentation.inputs:execIn"),
+                        ("Context.outputs:context", "cameraHelperAgentViewRgb.inputs:context"),
+                        ("Context.outputs:context", "cameraHelperAgentViewInfo.inputs:context"),
+                        ("Context.outputs:context", "cameraHelperAgentViewDepth.inputs:context"),
+                        ("Context.outputs:context", "cameraHelperAgentViewInstanceSegmentation.inputs:context"),
+                        (
+                            "getRenderProductAgentView.outputs:renderProductPath",
+                            "cameraHelperAgentViewRgb.inputs:renderProductPath",
+                        ),
+                        (
+                            "getRenderProductAgentView.outputs:renderProductPath",
+                            "cameraHelperAgentViewInfo.inputs:renderProductPath",
+                        ),
+                        (
+                            "getRenderProductAgentView.outputs:renderProductPath",
+                            "cameraHelperAgentViewDepth.inputs:renderProductPath",
+                        ),
+                        (
+                            "getRenderProductAgentView.outputs:renderProductPath",
+                            "cameraHelperAgentViewInstanceSegmentation.inputs:renderProductPath",
+                        ),
                     ],
                     og.Controller.Keys.SET_VALUES: [
                         ("Context.inputs:domain_id", ros_domain_id),
@@ -354,6 +434,7 @@ class SimManager:
                         ("ArticulationController.inputs:robotPath", FRANKA_STAGE_PATH),
                         ("PublishJointState.inputs:topicName", "isaac_joint_states"),
                         ("SubscribeJointState.inputs:topicName", "isaac_joint_commands"),
+                        # Realsense Camera Key Values
                         ("createViewport.inputs:name", REALSENSE_VIEWPORT_NAME),
                         ("createViewport.inputs:viewportId", 1),
                         ("cameraHelperRgb.inputs:frameId", "sim_camera"),
@@ -365,6 +446,25 @@ class SimManager:
                         ("cameraHelperDepth.inputs:frameId", "sim_camera"),
                         ("cameraHelperDepth.inputs:topicName", "depth"),
                         ("cameraHelperDepth.inputs:type", "depth"),
+                        ("cameraHelperInstanceSegmentation.inputs:frameId", "sim_camera"),
+                        ("cameraHelperInstanceSegmentation.inputs:topicName", "instance_segmentation"),
+                        ("cameraHelperInstanceSegmentation.inputs:type", "instance_segmentation"),
+                        # Agent View Camera Key Values
+                        ("createAgentView.inputs:name", "agentview"),
+                        ("createAgentView.inputs:viewportId", 2),
+                        ("setCameraAgentView.inputs:cameraPrim", "/World/agentview_camera"),
+                        ("cameraHelperAgentViewRgb.inputs:frameId", "agentview"),
+                        ("cameraHelperAgentViewRgb.inputs:topicName", "agentview/rgb"),
+                        ("cameraHelperAgentViewRgb.inputs:type", "rgb"),
+                        ("cameraHelperAgentViewInfo.inputs:frameId", "agentview"),
+                        ("cameraHelperAgentViewInfo.inputs:topicName", "agentview/camera_info"),
+                        ("cameraHelperAgentViewInfo.inputs:type", "camera_info"),
+                        ("cameraHelperAgentViewDepth.inputs:frameId", "agentview"),
+                        ("cameraHelperAgentViewDepth.inputs:topicName", "agentview/depth"),
+                        ("cameraHelperAgentViewDepth.inputs:type", "depth"),
+                        ("cameraHelperAgentViewInstanceSegmentation.inputs:frameId", "agentview"),
+                        ("cameraHelperAgentViewInstanceSegmentation.inputs:topicName", "agentview/instance_segmentation"),
+                        ("cameraHelperAgentViewInstanceSegmentation.inputs:type", "instance_segmentation"),
                     ],
                 },
             )

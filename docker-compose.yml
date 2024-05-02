@@ -325,7 +325,7 @@ services:
       # Allows graphical programs in the container
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
       - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority
-      - ./config:/root/ws_moveit/src/moveit2_tutorials/doc/how_to_guides/isaac_panda/config
+      - ./franka_moveit/config:/root/ws_moveit/src/moveit2_tutorials/doc/how_to_guides/isaac_panda/config
     command: ros2 launch moveit2_tutorials isaac_demo.launch.py
     deploy:
       resources:

@@ -38,6 +38,7 @@ ENV NVIDIA_DRIVER_CAPABILITIES compute,utility
 ENV NVIDIA_REQUIRE_CUDA "cuda>=${CUDA_MAJOR_VERSION}.${CUDA_MINOR_VERSION}"
 
 COPY ./isaac_demo.launch.py /root/ws_moveit/src/moveit2_tutorials/doc/how_to_guides/isaac_panda/launch/isaac_demo.launch.py
+COPY ./config/panda_moveit_config.rviz /root/ws_moveit/src/moveit2_tutorials/doc/how_to_guides/isaac_panda/config/panda_moveit_config.rviz
 RUN source /opt/ros/humble/setup.bash && \
                         cd /root/ws_moveit \
                         && colcon build --packages-select moveit2_tutorials
