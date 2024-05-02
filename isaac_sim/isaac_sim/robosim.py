@@ -130,12 +130,20 @@ class SimManager:
         carb.log_warn(f"Time taken to create Franka: {time.time() - start_time} seconds")
         self.sim.update()
     
+    def __rand_position_in_bounds(self, bounds, height):
+        x = np.random.uniform(bounds[0][0], bounds[1][0])
+        y = np.random.uniform(bounds[0][1], bounds[1][1])
+        z = height
+        return np.array([x, y, z])
+    
     def _load_objects(self):
         start_time = time.time()
+        bounds = [[-0.5, -0.35], [0.5, 0.35]]
         prims.create_prim(
             WORLD_STAGE_PATH + "/cracker_box",
             "Xform",
-            position=np.array([-0.2, -0.25, 0.15]),
+            # position=np.array([-0.2, -0.25, 0.15]),
+            position=self.__rand_position_in_bounds(bounds, 0.15),
             orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(1, 0, 0), -90)),
             usd_path=self.assets_root_path
             + "/Isaac/Props/YCB/Axis_Aligned_Physics/003_cracker_box.usd",
@@ -143,7 +151,8 @@ class SimManager:
         prims.create_prim(
             WORLD_STAGE_PATH + "/sugar_box",
             "Xform",
-            position=np.array([-0.07, -0.25, 0.1]),
+            # position=np.array([-0.07, -0.25, 0.1]),
+            position=self.__rand_position_in_bounds(bounds, 0.1),
             orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(0, 1, 0), -90)),
             usd_path=self.assets_root_path
             + "/Isaac/Props/YCB/Axis_Aligned_Physics/004_sugar_box.usd",
@@ -151,7 +160,8 @@ class SimManager:
         prims.create_prim(
             WORLD_STAGE_PATH + "/soup_can",
             "Xform",
-            position=np.array([0.1, -0.25, 0.10]),
+            # position=np.array([0.1, -0.25, 0.10]),
+            position=self.__rand_position_in_bounds(bounds, 0.10),
             orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(1, 0, 0), -90)),
             usd_path=self.assets_root_path
             + "/Isaac/Props/YCB/Axis_Aligned_Physics/005_tomato_soup_can.usd",
@@ -159,7 +169,8 @@ class SimManager:
         prims.create_prim(
             WORLD_STAGE_PATH + "/mustard_bottle",
             "Xform",
-            position=np.array([0.0, 0.15, 0.12]),
+            # position=np.array([0.0, 0.15, 0.12]),
+            position=self.__rand_position_in_bounds(bounds, 0.12),
             orientation=rotations.gf_rotation_to_np_array(Gf.Rotation(Gf.Vec3d(1, 0, 0), -90)),
             usd_path=self.assets_root_path
             + "/Isaac/Props/YCB/Axis_Aligned_Physics/006_mustard_bottle.usd",
@@ -197,7 +208,8 @@ class SimManager:
         )
         realsense_prim.GetHorizontalApertureAttr().Set(20.955)
         realsense_prim.GetVerticalApertureAttr().Set(15.7)
-        realsense_prim.GetFocalLengthAttr().Set(18.8)
+        # realsense_prim.GetFocalLengthAttr().Set(18.8)
+        realsense_prim.GetFocalLengthAttr().Set(12.7)
         realsense_prim.GetFocusDistanceAttr().Set(400)
 
         viewport = omni.ui.Workspace.get_window("Viewport")
@@ -220,7 +232,7 @@ class SimManager:
 
         camera_rot = Gf.Rotation(Gf.Vec3d(0, 0, 1), -90) * Gf.Rotation(Gf.Vec3d(1, 0, 0), 45)
         self.cameras["agentview"] = Camera(
-            prim_path="/World/camera",
+            prim_path="/World/agentview_camera",
             name="agentview",
             resolution=(1024, 768),
             position=(0, 2.75, 2.67),
