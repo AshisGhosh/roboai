@@ -6,8 +6,9 @@ import base64
 import argparse
 import logging
 import ollama
-import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 
 from fastembed import TextEmbedding
 from dotenv import load_dotenv
@@ -256,6 +257,15 @@ def calculate_semantic_similarity(response_names, gt_names, embed_model, similar
         "count": len(all_cosine_similarities)
     }
 
+    # Calculate statistics for sem_score_matches
+    sem_score_match_stats = {
+        "mean": np.mean([pair['cosine_similarity'] for pair in sem_score_matches]),
+        "std": np.std([pair['cosine_similarity'] for pair in sem_score_matches]),
+        "min": min([pair['cosine_similarity'] for pair in sem_score_matches], default=0),
+        "max": max([pair['cosine_similarity'] for pair in sem_score_matches], default=0),
+        "count": len(sem_score_matches)
+    }
+    
     return sem_score_matches, unpaired_responses, sem_score_match_stats, all_sem_scores, all_sem_score_stats
 
 def calculate_count_accuracy(response_count, gt_count, response_len):
@@ -297,20 +307,19 @@ def calculate_order_accuracy(sem_score_matches):
     }
 
 def evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_count):
-    sem_score_matches, unpaired_responses, all_sem_scores, all_sem_score_stats = calculate_semantic_similarity(response_names, gt_names, embed_model)
+    sem_score_matches, unpaired_responses, sem_score_match_stats, all_sem_scores, all_sem_score_stats = calculate_semantic_similarity(response_names, gt_names, embed_model)
     order_accuracy_result = calculate_order_accuracy(sem_score_matches)
     count_accuracy_score = calculate_count_accuracy(response_count, gt_count, len(response_names))
-    sem_score_match_avg = sum(score["cosine_similarity"] for score in sem_score_matches) / len(sem_score_matches) if sem_score_matches else 0
 
     # Weight factors
-    weight_order = 0.2
+    weight_order = 0.1
     weight_count = 0.2
-    weight_similarity = 0.6
+    weight_similarity = 0.7
 
     # Final score calculation
     final_score = (weight_order * order_accuracy_result["order_accuracy_score"] +
                    weight_count * count_accuracy_score +
-                   weight_similarity * sem_score_match_avg)
+                   weight_similarity * sem_score_match_stats["mean"])
 
     return {
         "count_accuracy": count_accuracy_score,
@@ -323,13 +332,53 @@ def evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_c
         "final_score": final_score
     }
 
+def compute_aggregate_stats(scores):
+    # Collect scores for each metric
+    order_accuracy_scores = []
+    average_semantic_scores = []
+    count_accuracy_scores = []
+    overall_performance_scores = []
+
+    for filename, score_data in scores.items():
+        order_accuracy_scores.append(score_data["order_accuracy"]["order_accuracy_score"])
+        average_semantic_scores.append(score_data["sem_score_match_stats"]["mean"])
+        count_accuracy_scores.append(score_data["count_accuracy"])
+        overall_performance_scores.append(score_data["final_score"])
+
+    # Calculate statistics
+    def compute_statistics(data):
+        return {
+            "mean": np.mean(data),
+            "std": np.std(data),
+            "min": np.min(data),
+            "max": np.max(data),
+            "count": len(data)
+        }
+
+    # Calculate overall statistics
+    order_accuracy_statistics = compute_statistics(order_accuracy_scores)
+    semantic_score_statistics = compute_statistics(average_semantic_scores)
+    count_accuracy_statistics = compute_statistics(count_accuracy_scores)
+    overall_performance_statistics = compute_statistics(overall_performance_scores)
+
+    # Store the overall statistics
+    aggregate_stats = {
+        "order_accuracy_score_stats": order_accuracy_statistics,
+        "matched_name_semantic_score_stats": semantic_score_statistics,
+        "count_accuracy_score_stats": count_accuracy_statistics,
+        "final_score_stats": overall_performance_statistics
+    }
+
+    return aggregate_stats
+
 def compare_results(responses):
     # Placeholder for comparison logic
     print("Comparison results (placeholder):", responses)
 
 def generate_json_output(responses, sim_metadata, model_info, prompt, validation_data, scores, output_file='output.json'):
     analysis_start_time = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
+    aggregate_stats = compute_aggregate_stats(scores)
+        
     output_data = {
         "sim_info": sim_metadata,
         "model_info": model_info,
@@ -337,7 +386,8 @@ def generate_json_output(responses, sim_metadata, model_info, prompt, validation
         "prompt": prompt,
         "responses": responses,
         "validation_data": validation_data,
-        "scores": scores
+        "scores": scores,
+        "aggregate_stats": aggregate_stats
     }
 
     # Debugging: Log each item's type in results to check for non-serializable objects
@@ -348,16 +398,63 @@ def generate_json_output(responses, sim_metadata, model_info, prompt, validation
         json.dump(output_data, file, indent=4)
     logger.info(f"JSON output generated at {output_file}")
 
+def extract_data(data):
+    return {
+        "responses": data['responses'],
+        "sim_info": data['sim_info']['runs'],
+        "validation_data": data['validation_data'],
+        "scores": data['scores'],
+        "model_info": data['model_info'],
+        "aggregate_stats": json.dumps(data.get('aggregate_stats', {}), indent=4).replace('\n', '<br>')
+    }
+
+def generate_histogram(data, title, xlabel, ylabel, output_file):
+    plt.figure(figsize=(10, 6))
+    plt.hist(data, bins=20, color='skyblue', edgecolor='black')
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    n = len(data)
+    plt.text(0.95, 0.95, f'n = {n}', ha='right', va='top', transform=plt.gca().transAxes)
+    plt.savefig(output_file)
+    plt.close()
+    
+def generate_graphs(scores, graph_dir):
+    sem_scores_output_file = os.path.join(graph_dir, 'sem_scores_histogram.png')
+    final_scores_output_file = os.path.join(graph_dir, 'final_scores_histogram.png')
+    
+    # Extract data for histograms
+    avg_sem_scores_for_histogram = [item['sem_score_match_stats']['mean'] for item in scores.values() if 'sem_score_match_stats' in item]
+    final_scores_for_histogram = [item['final_score'] for item in scores.values() if 'final_score' in item]
+
+    # Generate histograms
+    generate_histogram(
+        avg_sem_scores_for_histogram,
+        title='Matched Name Avg SemScores',
+        xlabel='SemScore',
+        ylabel='Frequency',
+        output_file=sem_scores_output_file
+    )
+
+    generate_histogram(
+        final_scores_for_histogram,
+        title='Final Scores',
+        xlabel='Score',
+        ylabel='Frequency',
+        output_file=final_scores_output_file
+    )
+
 def html_from_output_json(json_file_path, html_output_path):
     try:
         with open(json_file_path, 'r') as file:
             data = json.load(file)
-
-        responses = data['responses']
-        sim_info = data['sim_info']['runs']
-        validation_data = data['validation_data']
-        scores = data['scores']
-        model_info = data['model_info']
+        
+        extracted_data = extract_data(data)
+        responses = extracted_data['responses']
+        validation_data = extracted_data['validation_data']
+        scores = extracted_data['scores']
+        sim_info = extracted_data['sim_info']
+        model_info = extracted_data['model_info']
         
         rows = []
         for filename, content in responses.items():
@@ -377,6 +474,8 @@ def html_from_output_json(json_file_path, html_output_path):
             per_file_matched_names_formatted = f"<details><summary>View Details</summary><pre><code>{''.join(per_file_matched_names)}</code></pre></details>"
             per_file_all_sem_scores = json.dumps(score_data.get('all_sem_scores', {}), indent=4).replace("\n", "<br>")
             per_file_all_sem_scores_formatted = f"<details><summary>View Details</summary><pre><code>{per_file_all_sem_scores}</code></pre></details>"
+            per_file_all_sem_score_stats = json.dumps(score_data.get('all_sem_score_stats', {}), indent=4).replace("\n", "<br>")
+            per_file_all_sem_score_stats_formatted = f"<details><summary>View Details</summary><pre><code>{per_file_all_sem_score_stats}</code></pre></details>"
 
             full_response_json = json.dumps(content, indent=4).replace("\n", "<br>")
             full_response_formatted = f"<details><summary>View Details</summary><pre><code>{full_response_json}</code></pre></details>"
@@ -398,11 +497,12 @@ def html_from_output_json(json_file_path, html_output_path):
                 'Response Message': f'<code class="response">{response}</code>',
                 'Validation Data': f'<code class="gt">{per_file_validation_details}</code>',
                 'Final Score': score_data.get('final_score', ''),
-                'Matched Name Avg SemScore': score_data.get('sem_score_match_avg', ''),
+                'Matched Name Avg SemScore': score_data.get('sem_score_match_stats', {}).get('mean', ''),
                 'Count Accuracy': score_data.get('count_accuracy', ''),
                 'Pairwise Order Accuracy': score_data.get('order_accuracy', {}).get('order_accuracy_score', ''),
                 'Matches & Unpaired Responses': per_file_matched_names_formatted,
                 'All SemScores': per_file_all_sem_scores_formatted,
+                'All SemScore Stats': per_file_all_sem_score_stats_formatted, 
                 'Full Response': full_response_formatted,
                 'Sim Details': sim_details_formatted,
                 'Model Info': model_info_formatted
@@ -509,13 +609,13 @@ def html_from_output_json(json_file_path, html_output_path):
         '''
 
         html_table = df.to_html(escape=False, index=False)
-        html_table = html_table.replace('<th>Run</th>', '<th class="sortable">Run</th>')
-        html_table = html_table.replace('<th>Final Score</th>', '<th class="sortable">Final Score</th>')
-        html_table = html_table.replace('<th>Names SemScore</th>', '<th class="sortable">Names SemScore</th>')
-        html_table = html_table.replace('<th>Count Accuracy</th>', '<th class="sortable">Count Accuracy</th>')
-        html_table = html_table.replace('<th>Order Accuracy</th>', '<th class="sortable">Order Accuracy</th>')
+        for header in ['Run', 'Final Score', 'Matched Name Avg SemScore', 'Count Accuracy', 'Order Accuracy']:
+            html_table = html_table.replace(f'<th>{header}</th>', f'<th class="sortable">{header}</th>')
         
-        html_content = f"<head>{html_style_script}</head><body>{html_table}</body>"
+        aggregate_stats_formatted = f"<details><summary>View Aggregate Stats</summary><pre><code>{extracted_data['aggregate_stats']}</code></pre></details>"
+        final_scores_histogram = f'<details><summary>View Final Score Histogram</summary><img src="graphs/final_scores_histogram.png" alt="Final Scores Histogram"></details>'
+        sem_scores_histogram = f'<details><summary>View Matched Name Avg SemScore Histogram</summary><img src="graphs/sem_scores_histogram.png" alt="SemScore Histogram"></details>'
+        html_content = f"<head>{html_style_script}</head><body>{aggregate_stats_formatted}{final_scores_histogram}{sem_scores_histogram}{html_table}</body>"
 
         with open(html_output_path, 'w') as f:
             f.write(html_content)
@@ -556,8 +656,11 @@ Respond using JSON. Follow the pattern:
     timestamp = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
     model_name_dir = model_name.replace(':', '-')
     analysis_session_dir = os.path.join(analysis_dir, f"{timestamp}_{model_name_dir}")
+    graphs_dir = os.path.join(analysis_session_dir, 'graphs')
     os.makedirs(analysis_session_dir)
+    os.makedirs(graphs_dir)
     os.chmod(analysis_session_dir, 0o755)
+    os.chmod(graphs_dir, 0o755)
 
     model_info = get_model_info(model_name)
     if model_info:
@@ -569,17 +672,29 @@ Respond using JSON. Follow the pattern:
         output_html_path = os.path.join(analysis_session_dir, 'output.html')
         generate_json_output(responses, sim_metadata, model_info, prompt, validation_data, scores, output_file=output_json_path)
         html_from_output_json(output_json_path, output_html_path)
+        generate_graphs(scores, graphs_dir)
 
-        # Set file permissions right after creation
+        # Set file permissions for files
         os.chmod(output_json_path, 0o644)
         os.chmod(output_html_path, 0o644)
-        if os.getuid() == 0:  # Optionally change ownership to match the host user, if the script runs as root
+        for file in os.listdir(graphs_dir):
+            graph_path = os.path.join(graphs_dir, file)
+            if os.path.exists(graph_path):
+                os.chmod(graph_path, 0o644)
+
+        # Optionally change ownership to match the host user, if the script runs as root
+        if os.getuid() == 0:
             host_uid = 1000  # Replace with actual host user ID
             host_gid = 1000  # Replace with actual host group ID
             os.chown(analysis_dir, host_uid, host_gid)
             os.chown(analysis_session_dir, host_uid, host_gid)
+            os.chown(graphs_dir, host_uid, host_gid)
             os.chown(output_json_path, host_uid, host_gid)
             os.chown(output_html_path, host_uid, host_gid)
+            for file in os.listdir(graphs_dir):
+                graph_path = os.path.join(graphs_dir, file)
+                if os.path.exists(graph_path):
+                    os.chown(graph_path, host_uid, host_gid)
     else:
         logger.error("Failed to fetch model information. Aborting image processing.")
 

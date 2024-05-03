@@ -18,6 +18,7 @@ sentence-transformers = "^2.6.1"
 replicate = "^0.25.1"
 pandas = "^2.2.2"
 fastembed = "^0.2.6"
+matplotlib = "^3.5"
 
 
 [build-system]
