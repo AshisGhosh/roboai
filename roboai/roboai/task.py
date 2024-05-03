@@ -1,10 +1,10 @@
 import io
 import base64
+import logging 
 
 from pydantic import BaseModel
 from typing import Callable
 
-import logging
 logging.basicConfig(level=logging.WARN)
 
 log = logging.getLogger("roboai")
@@ -30,7 +30,7 @@ def str_from_messages(messages):
     # Extract the text from the messages, ignore images
     text = ""
     for m in messages:
-        if type(m["content"]) == str:
+        if isinstance(m["content"], str):
             text += m["role"] + ": " + m["content"] + "\n"
         else:
             text += m["role"] + ": " + m["content"]["text"] + "\n"
@@ -102,7 +102,7 @@ class Task():
         log.debug(f"Tool {name} added.")
     
     def generate_tool_prompt(self):
-        tool_prompt = f"""
+        tool_prompt = """
             You can use the following python functions:
             """
         for tool in self.tools:

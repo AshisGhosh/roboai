@@ -1,24 +1,17 @@
-import argparse
-import json
-import h5py
 import imageio
 import numpy as np
 import os
 from copy import deepcopy
 import asyncio
 from PIL import Image
-import io
 
 import torch
 
 import robosuite
 from robosuite import load_controller_config
 
-import robomimic
 import robomimic.utils.file_utils as FileUtils
 import robomimic.utils.torch_utils as TorchUtils
-import robomimic.utils.tensor_utils as TensorUtils
-import robomimic.utils.obs_utils as ObsUtils
 from robomimic.envs.env_base import EnvBase
 from robomimic.algo import RolloutPolicy
 
@@ -61,7 +54,7 @@ class RobomimicSim:
         self.env = env
     
     def custom_env(self):
-        config = load_controller_config(default_controller="OSC_POSE") # load default controller config
+        load_controller_config(default_controller="OSC_POSE") # load default controller config
         # create environment from scratch
         env = robosuite.make(
             env_name="Lift", # try with other tasks like "Stack" and "Door"
@@ -146,7 +139,6 @@ class RobomimicSim:
 
         obs = env.get_observation()
 
-        results = {}
         video_count = 0  # video frame counter
         total_reward = 0.
         
@@ -186,7 +178,7 @@ class RobomimicSim:
 
                 # update for next iter
                 obs = deepcopy(next_obs)
-                state_dict = env.get_state()
+                env.get_state()
 
         except env.rollout_exceptions as e:
             print("WARNING: got rollout exception {}".format(e))

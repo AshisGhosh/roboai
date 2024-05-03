@@ -1,6 +1,5 @@
 import time
 import cv2
-import json
 from PIL import Image
 import numpy as np
 import rclpy

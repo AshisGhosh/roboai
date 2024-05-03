@@ -2,7 +2,7 @@
 
 import io
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
 from pydantic import BaseModel

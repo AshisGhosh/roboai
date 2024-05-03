@@ -1,6 +1,4 @@
-import asyncio
 import base64
-import io
 import numpy as np
 from PIL import Image
 import cv2
@@ -27,7 +25,7 @@ class Grasp:
         self.image = image
         self.depth = depth
         self.env = env
-        log.debug(f"Initializing camera")
+        log.debug("Initializing camera")
         self.camera = Camera(self.env, "robot0_eye_in_hand")
 
         self.cls = cls

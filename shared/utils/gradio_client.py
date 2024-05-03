@@ -1,7 +1,5 @@
 from PIL import Image
 from typing import Dict, Any
-import io
-import base64
 import gradio_client
 from gradio_client import Client
 import time
@@ -26,7 +24,6 @@ def qwen_vl_max_answer_question_from_image(image: Image, question: str) -> Dict[
     client = Client("https://qwen-qwen-vl-max.hf.space/--replicas/fi9fr/")
 
     image.save("/app/shared/data/tmp.png")
-    img_path = "/app/shared/data/tmp.png"
     start_time = time.time()
     # result = client.predict(
 	# 	fn_index=3
@@ -39,7 +36,6 @@ def qwen_vl_max_answer_question_from_image(image: Image, question: str) -> Dict[
 	# 	fn_index=5
     # )
 
-    json_str="/tmp/gradio/tmpp4n2qjo0.json"
     result = client.predict(
         # json_str,
         # "Hi",

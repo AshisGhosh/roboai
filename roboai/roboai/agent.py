@@ -1,11 +1,11 @@
 import time
-import litellm
-from litellm import completion
-
 import logging
+
+from litellm import completion
+from dotenv import load_dotenv
+
 logging.basicConfig(level=logging.WARN)
 
-from dotenv import load_dotenv
 load_dotenv("shared/.env")  # take environment variables from .env.
 
 log = logging.getLogger("roboai")

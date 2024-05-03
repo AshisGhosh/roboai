@@ -35,8 +35,6 @@ from omni.isaac.core.utils import (
     viewports
 )
 from pxr import Gf, UsdGeom  # noqa E402
-from omni.isaac.franka.controllers.rmpflow_controller import RMPFlowController
-from omni.isaac.franka.tasks import FollowTarget
 
 start_time = time.time()
 world = World(stage_units_in_meters=1.0)

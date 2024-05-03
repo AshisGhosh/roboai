@@ -1,5 +1,6 @@
 import litellm
 import ollama
+import logging 
 import numpy as np
 
 from shared.utils.model_server_client import _embed
@@ -7,7 +8,6 @@ from shared.utils.model_server_client import _embed
 from dotenv import load_dotenv
 load_dotenv("shared/.env")  # take environment variables from .env.
 
-import logging
 log = logging.getLogger("llm_utils")
 log.setLevel(logging.INFO)
 

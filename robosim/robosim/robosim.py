@@ -200,7 +200,7 @@ class RoboSim:
     
     def pixel_to_marker(self, pixel, camera_name="robot0_eye_in_hand"):
         if camera_name != "robot0_eye_in_hand":
-            raise NotImplementedError(f"pixel_to_marker only supports robot0_eye_in_hand currently.")
+            raise NotImplementedError("pixel_to_marker only supports robot0_eye_in_hand currently.")
         
         camera = Camera(self.env, camera_name)
         marker_pose = camera.pixel_to_world(pixel)
@@ -311,7 +311,7 @@ class RoboSim:
         '''
         Check if there is a task in the queue. If there is, execute it.
         '''
-        if self.current_task == None and self.tasks:
+        if self.current_task is None and self.tasks:
             self.current_task = self.tasks.pop(0)
             log.info(f"Current Task: {self.current_task.name}")
 

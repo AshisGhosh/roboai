@@ -1,7 +1,6 @@
 from launch import LaunchDescription
 from launch_ros.actions import ComposableNodeContainer
 from launch_ros.descriptions import ComposableNode
-from rclpy.qos import QoSProfile, DurabilityPolicy
 
 
 def generate_launch_description():
@@ -25,10 +24,7 @@ def generate_launch_description():
                 parameters=[{
                     'use_sim_time': False,
                     'queue_size': 10,
-                    # 'qos': QoSProfile(
-                    #             depth=10,
-                    #             durability=DurabilityPolicy.TRANSIENT_LOCAL
-                    #         )
+
                     'qos_overrides./parameter_events.publisher.durability': 'transient_local'
                 }]
             ),

@@ -196,7 +196,7 @@ class SetNavigationGoal(Node):
 def main():
     rclpy.init()
     set_goal = SetNavigationGoal()
-    result = set_goal.send_goal()
+    set_goal.send_goal()
     rclpy.spin(set_goal)
 
 

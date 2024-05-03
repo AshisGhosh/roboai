@@ -134,7 +134,7 @@ class GridMap:
         # image point acts as the center of the square, where each side of square is of size
         # 2xdistance
         patch = self.__grid_map[row_start_idx : img_point[1] + distance, col_start_idx : img_point[0] + distance]
-        obstacles = np.where(patch == True)
+        obstacles = np.where(patch is True)
         return len(obstacles[0]) > 0
 
     def is_valid_pose(self, point, distance=0.2):

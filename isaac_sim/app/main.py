@@ -1,9 +1,8 @@
 import nest_asyncio
 nest_asyncio.apply()
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import StreamingResponse
 
 from roboai.robosim import SimManager
 from roboai.standalone_stream_server import StreamServer

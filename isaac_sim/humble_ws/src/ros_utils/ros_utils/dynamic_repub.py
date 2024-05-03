@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import sys
 import numpy as np
 
 import rclpy
@@ -59,7 +58,7 @@ class DynamicRepub(Node):
         # Dynamically load message type from type name
         try:
             package_name, _, message_name = type_name.split('/')
-            relative_module = f".msg"
+            relative_module = ".msg"
             msg_module = __import__(f"{package_name}{relative_module}", fromlist=[message_name])
             return getattr(msg_module, message_name)
         except (ValueError, ImportError, AttributeError) as e:

@@ -1,5 +1,4 @@
 import carb
-import numpy as np
 from enum import Enum
 
 from roboai.robot import RobotStatus 

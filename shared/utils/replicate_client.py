@@ -1,7 +1,5 @@
 from PIL import Image
 from typing import Dict, Any
-import io
-import base64
 import replicate
 import time
 

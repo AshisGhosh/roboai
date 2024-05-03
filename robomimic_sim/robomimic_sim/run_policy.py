@@ -1,6 +1,3 @@
-import argparse
-import json
-import h5py
 import imageio
 import numpy as np
 import os
@@ -8,11 +5,8 @@ from copy import deepcopy
 
 import torch
 
-import robomimic
 import robomimic.utils.file_utils as FileUtils
 import robomimic.utils.torch_utils as TorchUtils
-import robomimic.utils.tensor_utils as TensorUtils
-import robomimic.utils.obs_utils as ObsUtils
 from robomimic.envs.env_base import EnvBase
 from robomimic.algo import RolloutPolicy
 
@@ -69,7 +63,6 @@ def rollout(policy, env, horizon, render=False, video_writer=None, video_skip=5,
     # hack that is necessary for robosuite tasks for deterministic action playback
     obs = env.reset_to(state_dict)
 
-    results = {}
     video_count = 0  # video frame counter
     total_reward = 0.
 

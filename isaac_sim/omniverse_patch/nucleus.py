@@ -165,7 +165,7 @@ async def download_assets_async(
                 carb.log_warn(f"Failed to copy {path} to {dst}.")
                 return Result.ERROR_ACCESS_LOST
         except asyncio.CancelledError:
-            carb.log_warn(f"Assets download cancelled.")
+            carb.log_warn("Assets download cancelled.")
             return Result.ERROR
         except Exception as ex:
             carb.log_warn(f"Exception: {type(ex).__name__}")

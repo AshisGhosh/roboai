@@ -1,11 +1,9 @@
 #!/usr/bin/python -u
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.responses import StreamingResponse
 import io
-import asyncio
-from PIL import Image
 
 from robomimic_sim.robomimic_sim import RobomimicSim
 

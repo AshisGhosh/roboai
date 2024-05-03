@@ -1,14 +1,13 @@
-import os
+import httpx
+import logging
+
 from typing import Any, Dict, Optional
 
-import asyncio
-import httpx
 from httpx import Timeout
 
 from dotenv import load_dotenv
 load_dotenv()
 
-import logging
 log = logging.getLogger("http_client")
 log.setLevel(logging.DEBUG)
 

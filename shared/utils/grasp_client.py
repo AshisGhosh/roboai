@@ -3,7 +3,7 @@ import io
 import asyncio
 from shared.utils.http_client import get_request, post_request
 
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from PIL import Image
 
 SERVER_NAME = "http://localhost:8005"

@@ -1,10 +1,11 @@
 #!/usr/bin/python -u
 import io
+import logging 
+
 from PIL import Image
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import StreamingResponse
 from fastapi.responses import JSONResponse
 
 from model_server.hf_moondream2 import HuggingFaceMoonDream2
@@ -14,7 +15,6 @@ moondream = HuggingFaceMoonDream2()
 mxbai_embed = HuggingFaceMXBaiEmbedLarge()
 
 
-import logging
 logging.basicConfig(level=logging.INFO)
 
 

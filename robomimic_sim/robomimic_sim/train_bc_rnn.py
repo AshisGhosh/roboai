@@ -18,7 +18,6 @@ To run a full length training run on your own dataset, use the following command
 """
 import argparse
 
-import robomimic
 import robomimic.utils.torch_utils as TorchUtils
 import robomimic.utils.test_utils as TestUtils
 import robomimic.macros as Macros

@@ -1,4 +1,5 @@
-import litellm
+import logging
+
 from litellm import completion
 
 from roboai.agent import Agent
@@ -7,7 +8,6 @@ from roboai.task import Task
 from dotenv import load_dotenv
 load_dotenv()  # take environment variables from .env.
 
-import logging
 logging.basicConfig(level=logging.WARN)
 
 log = logging.getLogger("roboai")

@@ -55,10 +55,9 @@ class RobotJob:
         '''        
 
         im = get_image()
-        prompt = "Concisely describe the objects on the table."
 
         task_scene = Task(
-            f"Given the following image, describe the objects on the table."
+            "Given the following image, describe the objects on the table."
         )
         task_scene.add_task_image(im)
         scene_agent = Agent(
@@ -133,7 +132,7 @@ class RobotJob:
         planner_agent = Agent(
             name="Planner",
             model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
-            system_message=f"""
+            system_message="""
             You are a planner that breaks down tasks into steps for robots.
             Create a conscise set of steps that a robot can do.
             Do not add any extra steps.

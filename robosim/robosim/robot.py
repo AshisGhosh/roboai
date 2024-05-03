@@ -1,10 +1,8 @@
 import numpy as np
-from PIL import Image
-import asyncio
 import copy
 
 from robosim.grasp_handler import GraspHandler
-from robosuite.utils.transform_utils import euler2mat, mat2euler, mat2quat, _AXES2TUPLE
+from robosuite.utils.transform_utils import euler2mat, mat2euler, mat2quat
 from robosuite.utils.sim_utils import get_contacts
 
 import logging

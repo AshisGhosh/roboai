@@ -2,7 +2,7 @@ import io
 import asyncio
 from PIL import Image
 from typing import Any, Dict
-from shared.utils.http_client import post_request, get_request, get_image_request
+from shared.utils.http_client import post_request
 
 import logging
 log = logging.getLogger("model_server_client")
