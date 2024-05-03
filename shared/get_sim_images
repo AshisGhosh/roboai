@@ -34,6 +34,8 @@ import argparse
 import trimesh
 import numpy as np
 
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+
 # Base path to the data directory containing STL files
 BASE_DATA_PATH = os.path.join(os.path.dirname(__file__), 'data')
 
@@ -51,9 +53,17 @@ meshes = {
     for name, filename in stl_files.items()
 }
 
+def with_retry(func):
+    return retry(
+        stop=stop_after_attempt(3),
+        wait=wait_fixed(2),
+        retry=retry_if_exception_type(httpx.ReadTimeout),
+    )(func)
+
+@with_retry
 def start_simulation(sim_number):
     print(f"[Sim {sim_number}] Starting the simulation...")
-    with httpx.Client() as client:
+    with httpx.Client(timeout=10) as client:
         response = client.post("http://localhost:8000/start")
     if response.is_success:
         print(f"[Sim {sim_number}] Simulation started successfully.")
@@ -62,9 +72,10 @@ def start_simulation(sim_number):
         print(f"[Sim {sim_number}] Failed to start simulation.")
     return None
 
+@with_retry
 def close_simulation(sim_number, start_time):
     print(f"[Sim {sim_number}] Closing the simulation...")
-    with httpx.Client() as client:
+    with httpx.Client(timeout=10) as client:
         response = client.post("http://localhost:8000/close")
     if response.is_success:
         end_time = datetime.datetime.now().timestamp()
@@ -74,9 +85,10 @@ def close_simulation(sim_number, start_time):
         print(f"[Sim {sim_number}] Failed to close simulation.")
     return None
 
+@with_retry
 def get_image(sim_number, image_path):
     print(f"[Sim {sim_number}] Fetching image to save at {image_path}...")
-    with httpx.Client() as client:
+    with httpx.Client(timeout=10) as client:
         response = client.get("http://localhost:8000/get_image")
     if response.is_success:
         with open(image_path, "wb") as f:
