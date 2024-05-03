@@ -126,7 +126,7 @@ def apply_transformation(object_name, position, quaternion, size):
     mesh.apply_transform(transformation_matrix)
     return mesh
 
-def raytrace_distance_to_plane(mesh, plane_point, plane_normal):
+def vertex_distance_to_plane(mesh, plane_point, plane_normal):
     origins = np.array(mesh.vertices)
     directions = np.repeat([plane_normal], len(origins), axis=0)
     d = np.dot(plane_point - origins, plane_normal) / np.dot(directions, plane_normal).reshape(-1)
@@ -167,10 +167,10 @@ def get_metadata(sim_number):
             "quaternion": obj['quaternion'],
             "size": obj['size'],
             "distances": {
-                "background_plane": raytrace_distance_to_plane(origin_mesh, np.array([-1, 0, 0]), np.array([1, 0, 0])),
-                "foreground_plane": raytrace_distance_to_plane(origin_mesh, np.array([1, 0, 0]), np.array([-1, 0, 0])),
-                "leftward_plane": raytrace_distance_to_plane(origin_mesh, np.array([0, -1, 0]), np.array([0, 1, 0])),
-                "rightward_plane": raytrace_distance_to_plane(origin_mesh, np.array([0, 1, 0]), np.array([0, -1, 0])),
+                "background_plane": vertex_distance_to_plane(origin_mesh, np.array([-1, 0, 0]), np.array([1, 0, 0])),
+                "foreground_plane": vertex_distance_to_plane(origin_mesh, np.array([1, 0, 0]), np.array([-1, 0, 0])),
+                "leftward_plane": vertex_distance_to_plane(origin_mesh, np.array([0, -1, 0]), np.array([0, 1, 0])),
+                "rightward_plane": vertex_distance_to_plane(origin_mesh, np.array([0, 1, 0]), np.array([0, -1, 0])),
             }
         }
         for other_obj in objects:

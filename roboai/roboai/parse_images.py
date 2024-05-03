@@ -152,9 +152,16 @@ def process_dir(dir_path, model_name, prompt):
             else:
                 error_message = f"Error processing {filename}: {api_response.get('error', 'Unknown error')}"
                 print(error_message)
+                
+            augmentation_map = {
+                "Milk": "White milk carton",
+                "Can": "Red soda can",
+                "Cereal": "Red cereal box",
+                "Bread": "Brown bread loaf"
+            }
 
             if metadata_entry:
-                sorted_names = sort_objects_by_leftward_plane(metadata_entry['objects'], flip=flip)
+                sorted_names = [augmentation_map.get(name, name) for name in sort_objects_by_leftward_plane(metadata_entry['objects'], flip=flip)]
                 validation_data[filename] = {
                     "objects": {
                         "count": len(metadata_entry['objects']),
@@ -187,26 +194,69 @@ def sort_objects_by_leftward_plane(objects, flip=False):
     sorted_names = [obj['name'] for obj in sorted_objects]
     return sorted_names
 
-def calculate_semantic_similarity(response_names, gt_names, embed_model):
+def calculate_semantic_similarity(response_names, gt_names, embed_model, similarity_threshold=0.0):
     """
-    For each embedding of a response name (response_embed), the cosine similarity is calculated against
-    each ground truth embedding (gt_embed).
-    
-    For each response embedding, the ground truth embedding with the highest similarity is identified
-    using max(similarities). The similarity value and the index of the best-matching ground truth embedding
-    (best_match_idx) are stored in sem_scores.
+    For each response name, find the ground truth name with the highest cosine similarity.
+    Any response names that do not have a matching ground truth are reported as unpaired,
+    usually when len(response_names) > len(gt_names).
     """
-    sem_scores = []
+    sem_score_matches = []
+    unpaired_responses = []
+    all_sem_scores = []
+    all_cosine_similarities = []
+
     response_embeddings = list(embed_model.embed(response_names))
     gt_embeddings = list(embed_model.embed(gt_names))
-    
-    for response_name, response_embed in zip(response_names, response_embeddings):
+    all_pairs = []
+
+    for response_idx, (response_name, response_embed) in enumerate(zip(response_names, response_embeddings)):
         similarities = [cosine_similarity_np(response_embed, gt_embed) for gt_embed in gt_embeddings]
-        max_sim = max(similarities)
-        best_match_idx = similarities.index(max_sim)
-        sem_scores.append((response_name, best_match_idx, max_sim))
-    
-    return sem_scores
+        
+        similarity_info = {
+            "response_name": response_name,
+            "response_idx": response_idx,
+            "similarities": [{"gt_name": gt_name, "similarity": sim, "gt_idx": gt_idx}
+                             for gt_idx, (gt_name, sim) in enumerate(zip(gt_names, similarities))]
+        }
+        all_sem_scores.append(similarity_info)
+        all_cosine_similarities.extend(similarities)  # Collect similarities for statistics
+
+        for gt_idx, sim in enumerate(similarities):
+            if sim >= similarity_threshold:
+                all_pairs.append({
+                    "response_name": response_name,
+                    "response_idx": response_idx,
+                    "gt_name": gt_names[gt_idx],
+                    "gt_name_index": gt_idx,
+                    "cosine_similarity": sim
+                })
+
+    # Sort all pairs by similarity in descending order
+    all_pairs.sort(key=lambda x: x["cosine_similarity"], reverse=True)
+
+    matched_gt_indices = set()
+    matched_response_indices = set()
+
+    for pair in all_pairs:
+        if pair["gt_name_index"] not in matched_gt_indices and pair["response_idx"] not in matched_response_indices:
+            matched_gt_indices.add(pair["gt_name_index"])
+            matched_response_indices.add(pair["response_idx"])
+            sem_score_matches.append(pair)
+
+    # Find unmatched responses
+    unpaired_responses = [{"response_name": name, "response_idx": idx}
+                          for idx, name in enumerate(response_names) if idx not in matched_response_indices]
+
+    # Calculate statistics for cosine similarities
+    all_sem_score_stats = {
+        "mean": np.mean(all_cosine_similarities),
+        "std": np.std(all_cosine_similarities),
+        "min": np.min(all_cosine_similarities),
+        "max": np.max(all_cosine_similarities),
+        "count": len(all_cosine_similarities)
+    }
+
+    return sem_score_matches, unpaired_responses, sem_score_match_stats, all_sem_scores, all_sem_score_stats
 
 def calculate_count_accuracy(response_count, gt_count, response_len):
     # Internal consistency is based on the relative difference between the count and the length of the names list
@@ -221,50 +271,55 @@ def calculate_count_accuracy(response_count, gt_count, response_len):
     else:
         count_score = 0 if response_count != 0 else 1  # Both are zero
 
-    # The final score takes both internal consistency and the count score into account
     return max(0, internal_consistency * count_score)
 
-def calculate_order_accuracy(sem_scores, penalty_scale=0.25):
+def calculate_order_accuracy(sem_score_matches):
     """
-    Adjusted scoring function that considers partial matches and scales penalties
-    based on semantic similarity scores.
+    Calculates pairwise ordering accuracy based on the relative positions of
+    semantically matched objects in the response compared to the ground truth.
     """
-    n = len(sem_scores)
-    order_points = 0
-    total_penalty = 0
+    matched_indices = [score["gt_name_index"] for score in sem_score_matches]
 
-    for i in range(n):
-        for j in range(i + 1, n):
-            if sem_scores[i][1] < sem_scores[j][1]:
-                order_points += 1
+    correct_pairs = 0
+    total_pairs = len(matched_indices) - 1
 
-        # Apply a penalty scaled inversely to similarity score
-        similarity_score = sem_scores[i][2]
-        penalty = penalty_scale * (1 - similarity_score)
-        total_penalty += penalty
+    for i in range(total_pairs):
+        if matched_indices[i] <= matched_indices[i + 1]:
+            correct_pairs += 1
 
-    max_points = n * (n - 1) / 2
-    order_accuracy = (order_points / max_points if max_points != 0 else 0) - total_penalty
-    return max(order_accuracy, 0)  # Ensure order_accuracy doesn't go below 0
+    order_accuracy_score = correct_pairs / total_pairs if total_pairs > 0 else 1.0
+
+    return {
+        "order_accuracy_score": order_accuracy_score,
+        "matched_indices": matched_indices,
+        "correct_pairs": correct_pairs,
+        "total_pairs": total_pairs
+    }
 
 def evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_count):
-    sem_scores = calculate_semantic_similarity(response_names, gt_names, embed_model)
-    order_accuracy = calculate_order_accuracy(sem_scores)
-    count_accuracy = calculate_count_accuracy(response_count, gt_count, len(response_names))
-    avg_sem_score = sum([score[2] for score in sem_scores]) / len(sem_scores)
-    
+    sem_score_matches, unpaired_responses, all_sem_scores, all_sem_score_stats = calculate_semantic_similarity(response_names, gt_names, embed_model)
+    order_accuracy_result = calculate_order_accuracy(sem_score_matches)
+    count_accuracy_score = calculate_count_accuracy(response_count, gt_count, len(response_names))
+    sem_score_match_avg = sum(score["cosine_similarity"] for score in sem_score_matches) / len(sem_score_matches) if sem_score_matches else 0
+
+    # Weight factors
     weight_order = 0.2
     weight_count = 0.2
     weight_similarity = 0.6
 
-    final_score = (weight_order * order_accuracy + 
-                   weight_count * count_accuracy + 
-                   weight_similarity * avg_sem_score)
+    # Final score calculation
+    final_score = (weight_order * order_accuracy_result["order_accuracy_score"] +
+                   weight_count * count_accuracy_score +
+                   weight_similarity * sem_score_match_avg)
 
     return {
-        "order_accuracy": order_accuracy,
-        "count_accuracy": count_accuracy,
-        "avg_sem_score": avg_sem_score,
+        "count_accuracy": count_accuracy_score,
+        "order_accuracy": order_accuracy_result,
+        "sem_score_matches": sem_score_matches,
+        "unpaired_responses": unpaired_responses,
+        "sem_score_match_stats": sem_score_match_stats,
+        "all_sem_scores": all_sem_scores,
+        "all_sem_score_stats": all_sem_score_stats,
         "final_score": final_score
     }
 
@@ -279,7 +334,7 @@ def generate_json_output(responses, sim_metadata, model_info, prompt, validation
         "sim_info": sim_metadata,
         "model_info": model_info,
         "analysis_start_time": analysis_start_time,
-        "prompt:": prompt,
+        "prompt": prompt,
         "responses": responses,
         "validation_data": validation_data,
         "scores": scores
@@ -292,20 +347,6 @@ def generate_json_output(responses, sim_metadata, model_info, prompt, validation
     with open(output_file, 'w') as file:
         json.dump(output_data, file, indent=4)
     logger.info(f"JSON output generated at {output_file}")
-
-def load_output_json(o_json_file_path):
-    try:
-        with open(o_json_file_path, 'r') as file:
-            return json.load(file)
-    except FileNotFoundError:
-        print(f"Error: The file {o_json_file_path} does not exist.")
-        return None
-    except json.JSONDecodeError:
-        print(f"Error: The file {o_json_file_path} could not be decoded.")
-        return None
-    except Exception as e:
-        print(f"An error occurred: {e}")
-        return None
 
 def html_from_output_json(json_file_path, html_output_path):
     try:
@@ -320,26 +361,34 @@ def html_from_output_json(json_file_path, html_output_path):
         
         rows = []
         for filename, content in responses.items():
+            formatted_prompt = escape(data['prompt']).replace("\n", "<br>")
+            prompt_details = f'<details><summary>View Prompt</summary><code class="prompt">{formatted_prompt}</code></details>'
+
             response = escape(content.get('response', '')).replace("\n", "<br>")
-            details_json = json.dumps(content, indent=4).replace("\n", "<br>")
-            details = f"<details><summary>View Details</summary><pre><code>{details_json}</code></pre></details>"
+
+            per_file_validation_data = validation_data.get(filename, {})
+            per_file_validation_details = json.dumps(per_file_validation_data, indent=4).replace("\n", "<br>")
+            
+            score_data = scores.get(filename, {})            
+            per_file_matched_names = [
+                json.dumps(score_data.get('sem_score_matches', []), indent=4).replace("\n", "<br>"),
+                json.dumps(score_data.get('unpaired_responses', []), indent=4).replace("\n", "<br>")
+            ]
+            per_file_matched_names_formatted = f"<details><summary>View Details</summary><pre><code>{''.join(per_file_matched_names)}</code></pre></details>"
+            per_file_all_sem_scores = json.dumps(score_data.get('all_sem_scores', {}), indent=4).replace("\n", "<br>")
+            per_file_all_sem_scores_formatted = f"<details><summary>View Details</summary><pre><code>{per_file_all_sem_scores}</code></pre></details>"
+
+            full_response_json = json.dumps(content, indent=4).replace("\n", "<br>")
+            full_response_formatted = f"<details><summary>View Details</summary><pre><code>{full_response_json}</code></pre></details>"
 
             sim_details = next((run for run in sim_info if run['image_file'] == filename), None)
             sim_details_json = json.dumps(sim_details, indent=4).replace("\n", "<br>") if sim_details else "No sim details available"
             sim_details_formatted = f"<details><summary>View Sim Details</summary><pre><code>{sim_details_json}</code></pre></details>"
             
-            file_validation_data = validation_data.get(filename, {})
-            validation_json = json.dumps(file_validation_data, indent=4).replace("\n", "<br>")
-            validation_details = validation_json
-            
-            formatted_prompt = escape(data['prompt:']).replace("\n", "<br>")
-            prompt_details = f'<details><summary>View Prompt</summary><code class="prompt">{formatted_prompt}</code></details>'
-            
             model_info_json = json.dumps(model_info, indent=4).replace("\n", "<br>")
             model_info_formatted = f"<details><summary>View Model Info</summary><pre><code>{model_info_json}</code></pre></details>"
             model_name_table = model_info.get('name', {})
 
-            score_data = scores.get(filename, {})
             rows.append({
                 'Run': filename.split('.')[0],
                 'Image Filename': filename,
@@ -347,12 +396,14 @@ def html_from_output_json(json_file_path, html_output_path):
                 'Model Name': model_name_table,
                 'Prompt': prompt_details,
                 'Response Message': f'<code class="response">{response}</code>',
-                'Validation Data': f'<code class="gt">{validation_details}</code>',
+                'Validation Data': f'<code class="gt">{per_file_validation_details}</code>',
                 'Final Score': score_data.get('final_score', ''),
-                'Names SemScore': score_data.get('avg_sem_score', ''),
+                'Matched Name Avg SemScore': score_data.get('sem_score_match_avg', ''),
                 'Count Accuracy': score_data.get('count_accuracy', ''),
-                'Order Accuracy': score_data.get('order_accuracy', ''),
-                'Full Response': details,
+                'Pairwise Order Accuracy': score_data.get('order_accuracy', {}).get('order_accuracy_score', ''),
+                'Matches & Unpaired Responses': per_file_matched_names_formatted,
+                'All SemScores': per_file_all_sem_scores_formatted,
+                'Full Response': full_response_formatted,
                 'Sim Details': sim_details_formatted,
                 'Model Info': model_info_formatted
             })
@@ -479,7 +530,7 @@ def main():
     parser.add_argument("dir_name", nargs="?", help="Name of the dir containing the dataset. If not specified, the script will use the 'latest' symlink.")
     args = parser.parse_args()
 
-    model_name = "llava:latest"
+    model_name = "llava:13b"
     prompt = """How many objects are on the table? What are the objects? Order the objects as they appear from left to right.
     
 Respond using JSON. Follow the pattern: 
