@@ -294,7 +294,7 @@ def output_pred(raw_pred, img, im_size_, visualize):
         # img_mask = (img * 0.25 + seg_mask_vis * 0.75)
         # img_mask = img_mask.astype(np.uint8)*255
         if visualize:
-            cv2.imshow(f"Image Mask", img_mask)
+            cv2.imshow("Image Mask", img_mask)
             cv2.waitKey(0)
             
         return output, img_mask
@@ -310,7 +310,7 @@ class GraspServer:
         self.model = make_model(config)
         weights_path = "/app/data/weights/model_last.pth.tar"
         log_debug("Loading snapshot from %s", weights_path)
-        snapshot = resume_from_snapshot(self.model, weights_path, ["body", "rpn_head", "roi_head", "sem_head"])
+        resume_from_snapshot(self.model, weights_path, ["body", "rpn_head", "roi_head", "sem_head"])
         self.visualize = False
 
     def detect(self, img):

@@ -18,15 +18,15 @@ from grasp_det_seg.algos.rpn import AnchorMatcher, ProposalGenerator, RPNLoss
 from grasp_det_seg.algos.semantic_seg import SemanticSegAlgo, SemanticSegLoss
 from grasp_det_seg.config import load_config
 from grasp_det_seg.data_OCID import iss_collate_fn, OCIDTestDataset, OCIDTestTransform
-from grasp_det_seg.data_OCID.OCID_class_dict import colors_list, cls_list
+from grasp_det_seg.data_OCID.OCID_class_dict import colors_list
 from grasp_det_seg.data_OCID.sampler import DistributedARBatchSampler
-from grasp_det_seg.models.det_seg import DetSegNet, NETWORK_INPUTS
+from grasp_det_seg.models.det_seg import DetSegNet
 from grasp_det_seg.modules.fpn import FPN, FPNBody
 from grasp_det_seg.modules.heads import RPNHead, FPNROIHead, FPNSemanticHeadDeeplab
 from grasp_det_seg.utils import logging
 from grasp_det_seg.utils.meters import AverageMeter
 from grasp_det_seg.utils.misc import config_to_string, scheduler_from_config, norm_act_from_config, freeze_params, \
-    all_reduce_losses, NORM_LAYERS, OTHER_LAYERS
+    NORM_LAYERS, OTHER_LAYERS
 from grasp_det_seg.utils.parallel import DistributedDataParallel
 from grasp_det_seg.utils.snapshot import resume_from_snapshot
 
@@ -399,7 +399,7 @@ def main(args):
     model = make_model(config)
 
     log_debug("Loading snapshot from %s", args.model)
-    snapshot = resume_from_snapshot(model, args.model, ["body", "rpn_head", "roi_head", "sem_head"])
+    resume_from_snapshot(model, args.model, ["body", "rpn_head", "roi_head", "sem_head"])
 
     # Initialize GPU specific settings if a GPU is available
     if torch.cuda.is_available():

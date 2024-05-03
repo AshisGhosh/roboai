@@ -2,13 +2,11 @@
 
 import io
 import base64
-from PIL import Image
 import numpy as np
 import cv2
 
-from fastapi import FastAPI, File, UploadFile, HTTPException
+from fastapi import FastAPI, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from starlette.responses import StreamingResponse
 from fastapi.responses import JSONResponse
 
 from grasp_server.grasp_det_seg import GraspServer
