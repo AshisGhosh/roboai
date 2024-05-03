@@ -465,6 +465,8 @@ class SimManager:
                         ("cameraHelperAgentViewInstanceSegmentation.inputs:frameId", "agentview"),
                         ("cameraHelperAgentViewInstanceSegmentation.inputs:topicName", "agentview/instance_segmentation"),
                         ("cameraHelperAgentViewInstanceSegmentation.inputs:type", "instance_segmentation"),
+                        ("cameraHelperAgentViewInstanceSegmentation.inputs:enableSemanticLabels", True),
+                        ("cameraHelperAgentViewInstanceSegmentation.inputs:semanticLabelsTopicName", "agentview/semantic_labels"),
                     ],
                 },
             )

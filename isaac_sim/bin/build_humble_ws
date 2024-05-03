@@ -1,8 +1,8 @@
 cd /isaac-sim/humble_ws 
-if [ "$#" -eq 1 ]; then
-    PKG_ARG="$1"
-    echo "Building specific package: $PKG_ARG"
-    colcon build --packages-select "$PKG_ARG"
+source /isaac-sim/humble_ws/install/setup.bash
+if [ "$#" -gt 0 ]; then
+    echo "Building specific packages: $@"
+    colcon build --packages-select $@
 else
     echo "Building all packages"
     colcon build

@@ -1,0 +1,2 @@
+build_humble_ws roboai_interfaces data_gen
+ros2 launch data_gen object_sorter.launch.py

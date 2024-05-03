@@ -50,7 +50,7 @@ class DynamicRepub(Node):
                                 )
 
         repub_topic_name = f"{topic_name}_repub"  # Rename republished topic
-        self.custom_publishers[repub_topic_name] = self.create_publisher(msg_type, repub_topic_name, sub_qos_profile)
+        self.custom_publishers[repub_topic_name] = self.create_publisher(msg_type, repub_topic_name, QoSProfile(depth=10))
         self.create_subscription(msg_type, topic_name, lambda msg, repub_topic_name=repub_topic_name: self.repub_callback(msg, repub_topic_name), sub_qos_profile)
         self.initialized_topics.add(topic_name)
         self.get_logger().info(f'Set up republishing from {topic_name} to {repub_topic_name} with type {type_name}')
@@ -78,19 +78,25 @@ class DynamicRepub(Node):
     
     def _reencode_image(self, image):
         if image.encoding == '32SC1':
-            # image.encoding = '32FC1'
-            min_value = None
-            max_value = None
-            UPDATE_MIN = min_value is None
-            UPDATE_MAX = max_value is None
-            min_value = np.inf if min_value is None else min_value
-            max_value = -np.inf if max_value is None else max_value
-            array = np.frombuffer(image.data, dtype=np.float32).reshape(image.height, image.width, -1)
-            min_value = min(np.min(array).item(), min_value) if UPDATE_MIN else min_value
-            max_value = max(np.max(array).item(), max_value) if UPDATE_MAX else max_value
-            array = np.clip((array - min_value) / (max_value - min_value + sys.float_info.min) * 65535, 0, 65535)
-            image.data = array.astype(np.uint16).tobytes()
-            image.encoding = "mono16"         
+            # Convert the raw data to a numpy array of type int32
+            array = np.frombuffer(image.data, dtype=np.int32).reshape(image.height, image.width)
+
+            # Calculate local minimum and maximum values from the array
+            min_value = np.min(array)
+            max_value = np.max(array)
+
+            # Avoid division by zero if max_value equals min_value
+            if max_value == min_value:
+                max_value += 1  # Increment max_value to avoid zero division
+
+            # Normalize the array to the range 0-255
+            normalized_array = (array - min_value) / (max_value - min_value) * 255
+            clipped_array = np.clip(normalized_array, 0, 255)  # Ensure all values are within 0 to 255
+
+            # Convert back to byte format and update the image data
+            image.data = clipped_array.astype(np.uint8).tobytes()
+            image.encoding = "mono8"
+            image.step = image.width  # Number of bytes in a row
         return image
 
 def main(args=None):
