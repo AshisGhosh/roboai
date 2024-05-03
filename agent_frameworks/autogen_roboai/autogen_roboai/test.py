@@ -1,4 +1,3 @@
-import os
 import autogen
 from autogen import AssistantAgent, UserProxyAgent
 
@@ -51,7 +50,7 @@ user_proxy = UserProxyAgent(
     is_termination_msg=lambda x: "content" in x
         and x["content"] is not None
         and "TERMINATE" in x["content"]
-        and not '``' in x["content"]
+        and '``' not in x["content"]
     )
 
 @user_proxy.register_for_execution()
@@ -60,7 +59,7 @@ user_proxy = UserProxyAgent(
     description="Python function to get a list of objects on the table.",
 )
 def identify_objs_on_table(message: Annotated[str, "Message to ask the inspector for the objects on the table."]) -> str:
-    logging.info(f"Asked for objects.")
+    logging.info("Asked for objects.")
     return "Milk, Cereal, a Can."
 
 # inspector = AssistantAgent(

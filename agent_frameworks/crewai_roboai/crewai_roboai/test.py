@@ -1,6 +1,5 @@
 from crewai import Crew, Process, Agent, Task
 from crewai_tools import tool
-from typing_extensions import Annotated
 
 
 from dotenv import load_dotenv

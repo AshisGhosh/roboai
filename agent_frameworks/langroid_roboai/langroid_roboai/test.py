@@ -1,6 +1,5 @@
 import langroid as lr
 import langroid.language_models as lm
-from langroid.mytypes import Entity
 
 # set up LLM
 llm_cfg = lm.OpenAIGPTConfig( # or OpenAIAssistant to use Assistant API 
