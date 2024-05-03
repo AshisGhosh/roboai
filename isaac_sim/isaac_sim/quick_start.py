@@ -26,9 +26,9 @@ start_time = time.time()
 sim = SimulationApp(CONFIG)
 carb.log_warn(f"Time taken to load simulation: {time.time() - start_time} seconds")
 
-from omni.isaac.core import World
-from omni.isaac.franka import Franka
-from omni.isaac.core.utils import (
+from omni.isaac.core import World # noqa E402
+from omni.isaac.franka import Franka # noqa E402
+from omni.isaac.core.utils import ( # noqa E402
     nucleus,
     stage,
     prims,
@@ -36,7 +36,14 @@ from omni.isaac.core.utils import (
     viewports
 )
 from pxr import Gf, UsdGeom  # noqa E402
-from omni.isaac.franka.controllers.rmpflow_controller import RMPFlowController
+from omni.isaac.franka.controllers.rmpflow_controller import RMPFlowController # noqa E402
+from omni.isaac.core.objects import VisualCuboid # noqa E402
+from omni.isaac.core.materials import OmniGlass # noqa E402
+from omni.isaac.sensor import Camera # noqa E402
+
+from roboai.robot import RobotActor # noqa E402
+from roboai.tasks import TaskManager # noqa E402
+
 
 # INITIALIZE WORLD
 start_time = time.time()
@@ -108,8 +115,6 @@ carb.log_warn(f"Time taken to create prims: {time.time() - start_time} seconds")
 sim.update()
 
 # CREATE MARKER OBJECTS
-from omni.isaac.core.objects import VisualCuboid
-from omni.isaac.core.materials import OmniGlass
 
 marker_cube = world.scene.add(
         VisualCuboid(
@@ -149,7 +154,6 @@ rs_viewport = omni.ui.Workspace.get_window(REALSENSE_VIEWPORT_NAME)
 rs_viewport.dock_in(viewport, omni.ui.DockPosition.RIGHT, ratio=0.3)
 carb.log_warn(f"{REALSENSE_VIEWPORT_NAME} docked in {viewport.title}: {rs_viewport.docked}")
 
-from omni.isaac.sensor import Camera
 camera = Camera(prim_path=CAMERA_PRIM_PATH)
 
 world.reset()
@@ -159,10 +163,8 @@ franka = world.scene.get_object("franka")
 controller = RMPFlowController(name="target_follower_controller", robot_articulation=franka)
 articulation_controller = franka.get_articulation_controller()
 
-from roboai.robot import RobotActor
 robot_actor = RobotActor(world=world, robot=franka, controller=controller, articulator=articulation_controller)
 
-from roboai.tasks import TaskManager
 task_manager = TaskManager(robot_actor=robot_actor)
 task_manager.test_task()
 

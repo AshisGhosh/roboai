@@ -13,17 +13,17 @@ from robosuite.utils.transform_utils import mat2quat, euler2mat
 from robosuite.utils.camera_utils import CameraMover
 from robosuite.utils.mjcf_utils import new_body, new_site
 
-import logging
-log = logging.getLogger("robosim")
-log.setLevel(logging.INFO)
-
 from robosim.task import TaskFactory, TaskClass, TaskStatus
 from robosim.robot import Robot
 from robosim.grasp_handler import Camera
 
 import shared.utils.gradio_client as gradio
 from shared.utils.model_server_client import _answer_question_from_image
-import shared.utils.replicate_client as replicate
+import shared.utils.replicate_client as replicate # noqa: F401
+
+import logging
+log = logging.getLogger("robosim")
+log.setLevel(logging.INFO)
 
 class ControllerType(Enum):
     JOINT_VELOCITY = 1

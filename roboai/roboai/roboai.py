@@ -1,15 +1,15 @@
 from pydantic import BaseModel
 from typing import Callable
-import base64
-from PIL import Image
+import base64 # noqa: F401
+from PIL import Image # noqa: F401
 
 from roboai.agent import Agent
 from roboai.task import Task
 
-from shared.utils.robosim_client import get_objects_on_table, pick, place, get_image, get_grasp_image
-from shared.utils.model_server_client import answer_question_from_image
-import shared.utils.gradio_client as gradio
-import shared.utils.replicate_client as replicate
+from shared.utils.robosim_client import get_objects_on_table, pick, place, get_image, get_grasp_image # noqa: F401
+from shared.utils.model_server_client import answer_question_from_image # noqa: F401
+import shared.utils.gradio_client as gradio # noqa: F401 
+import shared.utils.replicate_client as replicate # noqa: F401
 
 import logging
 

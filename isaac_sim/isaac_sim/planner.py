@@ -1,8 +1,8 @@
 import numpy as np
 from PIL import Image
 from roboai.enums import CameraMode
-from roboai.shared.utils.grasp_client import get_grasp_from_image
-from roboai.shared.utils.robotic_grasping_client import get_grasps_from_rgb_and_depth
+from roboai.shared.utils.grasp_client import get_grasp_from_image # noqa: F401
+from roboai.shared.utils.robotic_grasping_client import get_grasps_from_rgb_and_depth 
 
 class Planner:
     def __init__(self, sim_manager, robot_actor):

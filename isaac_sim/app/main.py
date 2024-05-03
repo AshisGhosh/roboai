@@ -1,5 +1,5 @@
 import nest_asyncio
-nest_asyncio.apply()
+import logging
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,7 +7,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from roboai.robosim import SimManager
 from roboai.standalone_stream_server import StreamServer
 
-import logging
+nest_asyncio.apply()
+
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 

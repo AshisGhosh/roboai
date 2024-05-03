@@ -30,6 +30,7 @@ class SimManager:
         self.assets_root_path = None
         self.world = None
         self.cameras = {}
+        self.controller = None
         self.robot_actor = None
         self.task_manager = None
     
@@ -71,10 +72,10 @@ class SimManager:
         self._load_omnigraph()
 
         franka = self.world.scene.get_object("franka")
-        controller = RMPFlowController(name="target_follower_controller", robot_articulation=franka)
+        self.controller = RMPFlowController(name="target_follower_controller", robot_articulation=franka)
         articulation_controller = franka.get_articulation_controller()
 
-        self.robot_actor = RobotActor(world=self.world, robot=franka, controller=controller, articulator=articulation_controller)
+        self.robot_actor = RobotActor(world=self.world, robot=franka, controller=self.controller, articulator=articulation_controller)
         self.task_manager = TaskManager(sim_manager=self, robot_actor=self.robot_actor)
         self.planner = Planner(sim_manager=self, robot_actor=self.robot_actor)
 
@@ -102,7 +103,7 @@ class SimManager:
         assets_root_path = nucleus.get_assets_root_path()
         if assets_root_path is None:
             carb.log_error("Could not find Isaac Sim assets folder")
-            sim.close()
+            self.sim.close()
             sys.exit()
         carb.log_warn(f"Time taken to get assets root path: {time.time() - start_time} seconds")
         return assets_root_path
@@ -495,12 +496,12 @@ class SimManager:
             if self.world.is_playing():
                 if self.world.current_time_step_index == 0:
                     self.world.reset()
-                    controller.reset()
+                    self.controller.reset()
                 # Tick the Publish/Subscribe JointState, Publish TF and Publish Clock nodes each frame
                 og.Controller.set(
                     og.Controller.attribute("/ActionGraph/OnImpulseEvent.state:enableImpulse"), True
                 )
-                # self.task_manager.do_tasks()
+                self.task_manager.do_tasks()
             self.sim.update()
     
     def get_image(self, camera_name="realsense", mode=CameraMode.RGB, visualize=False):
@@ -521,8 +522,6 @@ class SimManager:
             return img
         except Exception as e:
             print(e)
-            import pdb; pdb.set_trace()
-
 
 if __name__ == "__main__":
     sim_manager = SimManager()

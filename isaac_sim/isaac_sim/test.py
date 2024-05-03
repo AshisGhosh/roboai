@@ -26,8 +26,8 @@ start_time = time.time()
 sim = SimulationApp(CONFIG)
 carb.log_warn(f"Time taken to load simulation: {time.time() - start_time} seconds")
 
-from omni.isaac.core import World
-from omni.isaac.core.utils import (
+from omni.isaac.core import World # noqa E402
+from omni.isaac.core.utils import ( # noqa E402
     nucleus,
     stage,
     prims,
