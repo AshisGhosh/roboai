@@ -63,11 +63,37 @@ RUN source /opt/ros/humble/setup.bash && \
          cd humble_ws && \
          colcon build
 RUN echo "source /isaac-sim/humble_ws/install/setup.bash" >> /root/.bashrc
+
+RUN apt-get update && apt-get install -y \
+                ros-humble-depth-image-proc 
+
+
+RUN apt-get install git -y
+
+ARG ROS_DISTRO=humble                
+RUN mkdir -p ~/ws_moveit2/src
+WORKDIR /root/ws_moveit2/src
+# Clone the moveit2 repository
+RUN git clone https://github.com/moveit/moveit2.git -b main
+RUN for repo in moveit2/moveit2.repos $(f="moveit2/moveit2_$ROS_DISTRO.repos"; test -r $f && echo $f); do \
+        vcs import < "$repo"; \
+        done
+RUN rosdep init && rosdep update
+RUN rosdep install -r --from-paths . --ignore-src --rosdistro $ROS_DISTRO -y
+RUN source /opt/ros/humble/setup.bash && \
+        cd ~/ws_moveit2 && \
+        colcon build --event-handlers desktop_notification- status- --cmake-args -DCMAKE_BUILD_TYPE=Release
+RUN echo "source ~/ws_moveit2/install/setup.bash" >> /root/.bashrc
+# TODO: debug why colcon build fails when git is installed (setuptools_scm issue)
+RUN apt-get remove git -y 
+
+
+WORKDIR /isaac-sim
+
 RUN echo "source /isaac-sim/setup_python_env.sh" >> /root/.bashrc
 ENV PYTHONPATH=/isaac-sim:/isaac-sim/roboai:$PYTHONPATH
 COPY ./isaac_sim/bin /isaac-sim/roboai/bin
 ENV PATH=/isaac-sim/roboai/bin:$PATH
 
-RUN apt-get update && apt-get install -y \
-                ros-humble-depth-image-proc
+
 

@@ -501,7 +501,7 @@ class SimManager:
                 og.Controller.set(
                     og.Controller.attribute("/ActionGraph/OnImpulseEvent.state:enableImpulse"), True
                 )
-                self.task_manager.do_tasks()
+                # self.task_manager.do_tasks()
             self.sim.update()
     
     def get_image(self, camera_name="realsense", mode=CameraMode.RGB, visualize=False):

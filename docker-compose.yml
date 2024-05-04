@@ -293,6 +293,7 @@ services:
       - XAUTHORITY=/root/.Xauthority
       - ACCEPT_EULA=Y
       - PRIVACY_CONSENT=Y
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
     entrypoint: /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
     deploy:
