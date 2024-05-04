@@ -27,38 +27,46 @@ app.add_middleware(
     allow_headers=["*"],  # Allow all headers
 )
 
+
 # Example route
 @app.get("/")
 async def read_root():
     return {"message": "Hello, FastAPI! This is the robomimic server."}
 
+
 @app.on_event("startup")
 async def startup_event():
     return robosim.setup()
+
 
 @app.post("/run")
 async def run():
     print("Running robomimic simulation...")
     return await robosim.start_rollout()
 
+
 @app.post("/reset")
 async def reset():
     print("Resetting robomimic simulation...")
     return await robosim.reset()
+
 
 @app.post("/start_renderer")
 async def start_renderer():
     print("Starting robomimic simulation...")
     return await robosim.start_renderer()
 
+
 @app.post("/close_renderer")
 async def close_renderer():
     print("Closing robomimic simulation...")
     return await robosim.close_renderer()
 
+
 @app.get("/get_policy")
 async def get_policy():
     return repr(robosim.policy)
+
 
 @app.get("/get_image")
 async def get_image():
@@ -68,4 +76,3 @@ async def get_image():
     img.save(buf, format="PNG")
     buf.seek(0)
     return StreamingResponse(buf, media_type="image/png")
-

@@ -67,7 +67,9 @@ def create_folder(server: str, path: str) -> bool:
         carb.log_info("Success: {} Server has {} folder created".format(server, path))
         return True
     else:
-        carb.log_warn("Failure: Server {} not able to create {} folder".format(server, path))
+        carb.log_warn(
+            "Failure: Server {} not able to create {} folder".format(server, path)
+        )
         return False
 
 
@@ -89,7 +91,9 @@ def delete_folder(server: str, path: str) -> bool:
         carb.log_info("Success: {} Server has {} folder deleted".format(server, path))
         return True
     else:
-        carb.log_warn("Failure: Server {} not able to delete {} folder".format(server, path))
+        carb.log_warn(
+            "Failure: Server {} not able to delete {} folder".format(server, path)
+        )
         return False
 
 
@@ -151,13 +155,17 @@ async def download_assets_async(
         path = os.path.relpath(entry, root_source).replace("\\", "/")
 
         carb.log_info(
-            "Downloading asset {} of {} from {}/{} to {}/{}".format(count, total, root_source, path, dst, path)
+            "Downloading asset {} of {} from {}/{} to {}/{}".format(
+                count, total, root_source, path, dst, path
+            )
         )
         try:
             async with sem:
                 result = await asyncio.wait_for(
                     omni.client.copy_async(
-                        "{}/{}".format(root_source, path), "{}/{}".format(dst, path), copy_behaviour
+                        "{}/{}".format(root_source, path),
+                        "{}/{}".format(dst, path),
+                        copy_behaviour,
                     ),
                     timeout=timeout,
                 )
@@ -212,7 +220,9 @@ async def check_server_async(server: str, path: str, timeout: float = 10.0) -> b
     carb.log_info("Checking path: {}{}".format(server, path))
 
     try:
-        result, _ = await asyncio.wait_for(omni.client.stat_async("{}{}".format(server, path)), timeout)
+        result, _ = await asyncio.wait_for(
+            omni.client.stat_async("{}{}".format(server, path)), timeout
+        )
         if result == Result.OK:
             carb.log_info("Success: {}{}".format(server, path))
             return True
@@ -233,7 +243,9 @@ def build_server_list() -> typing.List:
     Returns:
         all_servers (typing.List): List of servers found
     """
-    mounted_drives = carb.settings.get_settings().get_settings_dictionary("/persistent/app/omniverse/mountedDrives")
+    mounted_drives = carb.settings.get_settings().get_settings_dictionary(
+        "/persistent/app/omniverse/mountedDrives"
+    )
     all_servers = []
     if mounted_drives is not None:
         mounted_dict = json.loads(mounted_drives.get_dict())
@@ -271,7 +283,9 @@ def get_server_path(suffix: str = "") -> typing.Union[str, None]:
         Returns None if Nucleus server not found.
     """
     carb.log_info("Check /persistent/isaac/asset_root/default setting")
-    default_asset_root = carb.settings.get_settings().get("/persistent/isaac/asset_root/default")
+    default_asset_root = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/default"
+    )
     server_root = get_url_root(default_asset_root)
     if server_root:
         result = check_server(server_root, suffix)
@@ -292,7 +306,9 @@ async def get_server_path_async(suffix: str = "") -> typing.Union[str, None]:
         Returns None if Nucleus server not found.
     """
     carb.log_info("Check /persistent/isaac/asset_root/default setting")
-    default_asset_root = carb.settings.get_settings().get("/persistent/isaac/asset_root/default")
+    default_asset_root = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/default"
+    )
     server_root = get_url_root(default_asset_root)
     if server_root:
         result = await check_server_async(server_root, suffix)
@@ -350,10 +366,14 @@ def verify_asset_root_path(path: str) -> typing.Tuple[omni.client.Result, str]:
         carb.log_info(f"Error verifying Isaac Sim assets at {path}")
         return Result.ERROR_NOT_FOUND, ""
     elif ver_asset.major != ver_app.major:
-        carb.log_info(f"Unsupported version of Isaac Sim assets found at {path}: {ver_asset}")
+        carb.log_info(
+            f"Unsupported version of Isaac Sim assets found at {path}: {ver_asset}"
+        )
         return Result.ERROR_BAD_VERSION, ver_asset
     elif ver_asset.minor != ver_app.minor:
-        carb.log_info(f"Unsupported version of Isaac Sim assets found at {path}: {ver_asset}")
+        carb.log_info(
+            f"Unsupported version of Isaac Sim assets found at {path}: {ver_asset}"
+        )
         return Result.ERROR_BAD_VERSION, ver_asset
     else:
         return Result.OK, ver_asset
@@ -371,7 +391,9 @@ def get_full_asset_path(path: str) -> typing.Union[str, None]:
     """
 
     # 1 - Check /persistent/isaac/asset_root/default setting
-    default_asset_root = carb.settings.get_settings().get("/persistent/isaac/asset_root/default")
+    default_asset_root = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/default"
+    )
     if default_asset_root:
         result = check_server(default_asset_root, path)
         if result:
@@ -403,7 +425,9 @@ async def get_full_asset_path_async(path: str) -> typing.Union[str, None]:
     """
 
     # 1 - Check /persistent/isaac/asset_root/default setting
-    default_asset_root = carb.settings.get_settings().get("/persistent/isaac/asset_root/default")
+    default_asset_root = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/default"
+    )
     if default_asset_root:
         result = await check_server_async(default_asset_root, path)
         if result:
@@ -433,7 +457,9 @@ def get_nvidia_asset_root_path() -> typing.Union[str, None]:
 
     # 1 - Check /persistent/isaac/asset_root/nvidia setting
     carb.log_info("Check /persistent/isaac/asset_root/nvidia setting")
-    nvidia_asset_root = carb.settings.get_settings().get("/persistent/isaac/asset_root/nvidia")
+    nvidia_asset_root = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/nvidia"
+    )
     if nvidia_asset_root:
         result = check_server(nvidia_asset_root, "")
         if result:
@@ -482,18 +508,26 @@ def get_isaac_asset_root_path() -> typing.Union[str, None]:
 
     # 1 - Check /persistent/isaac/asset_root/isaac setting
     carb.log_info("Check /persistent/isaac/asset_root/isaac setting")
-    isaac_asset_root = carb.settings.get_settings().get("/persistent/isaac/asset_root/isaac")
+    isaac_asset_root = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/isaac"
+    )
     if isaac_asset_root:
         result = check_server(isaac_asset_root, "")
         if result:
             result, ver_asset = verify_asset_root_path(isaac_asset_root)
             if result is Result.OK:
-                carb.log_info("Isaac Sim assets version {} found at {}".format(ver_asset, isaac_asset_root))
+                carb.log_info(
+                    "Isaac Sim assets version {} found at {}".format(
+                        ver_asset, isaac_asset_root
+                    )
+                )
                 return isaac_asset_root
 
     # 2 - Check root on /persistent/isaac/asset_root/default and mountedDrives setting for /Isaac folder
     carb.log_info("Check /persistent/isaac/asset_root/default setting")
-    default_asset_root = carb.settings.get_settings().get("/persistent/isaac/asset_root/default")
+    default_asset_root = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/default"
+    )
     isaac_path = "/Isaac"
     server_root = get_url_root(isaac_asset_root)
     if default_asset_root:
@@ -502,7 +536,9 @@ def get_isaac_asset_root_path() -> typing.Union[str, None]:
             result, ver_asset = verify_asset_root_path(default_asset_root + isaac_path)
             if result is Result.OK:
                 carb.log_info(
-                    "Isaac Sim assets version {} found at {}".format(ver_asset, default_asset_root + isaac_path)
+                    "Isaac Sim assets version {} found at {}".format(
+                        ver_asset, default_asset_root + isaac_path
+                    )
                 )
                 return default_asset_root + isaac_path
 
@@ -513,7 +549,11 @@ def get_isaac_asset_root_path() -> typing.Union[str, None]:
             if result:
                 result, ver_asset = verify_asset_root_path(server_name + isaac_path)
                 if result is Result.OK:
-                    carb.log_info("Isaac Sim assets version {} found at {}".format(ver_asset, server_name + isaac_path))
+                    carb.log_info(
+                        "Isaac Sim assets version {} found at {}".format(
+                            ver_asset, server_name + isaac_path
+                        )
+                    )
                     return server_name + isaac_path
 
     # 3 - Check root on /persistent/isaac/asset_root/default and mountedDrives setting for /NVIDIA/Assets/Isaac/{version_major}.{version_minor} folder
@@ -524,7 +564,11 @@ def get_isaac_asset_root_path() -> typing.Union[str, None]:
         if result:
             result, ver_asset = verify_asset_root_path(server_root + isaac_path)
             if result is Result.OK:
-                carb.log_info("Isaac Sim assets version {} found at {}".format(ver_asset, server_root + isaac_path))
+                carb.log_info(
+                    "Isaac Sim assets version {} found at {}".format(
+                        ver_asset, server_root + isaac_path
+                    )
+                )
                 return server_root + isaac_path
 
     connected_servers = build_server_list()
@@ -534,18 +578,28 @@ def get_isaac_asset_root_path() -> typing.Union[str, None]:
             if result:
                 result, ver_asset = verify_asset_root_path(server_name + isaac_path)
                 if result is Result.OK:
-                    carb.log_info("Isaac Sim assets version {} found at {}".format(ver_asset, server_name + isaac_path))
+                    carb.log_info(
+                        "Isaac Sim assets version {} found at {}".format(
+                            ver_asset, server_name + isaac_path
+                        )
+                    )
                     return server_name + isaac_path
 
     # 4 - Check cloud for /Assets/Isaac/{version_major}.{version_minor} folder
-    cloud_assetsURL = carb.settings.get_settings().get_as_string("/persistent/isaac/asset_root/cloud")
+    cloud_assetsURL = carb.settings.get_settings().get_as_string(
+        "/persistent/isaac/asset_root/cloud"
+    )
     carb.log_info("Check {}".format(cloud_assetsURL))
     if cloud_assetsURL:
         result = check_server(cloud_assetsURL, "")
         if result:
             result, ver_asset = verify_asset_root_path(cloud_assetsURL)
             if result is Result.OK:
-                carb.log_info("Isaac Sim assets version {} found at {}".format(ver_asset, cloud_assetsURL))
+                carb.log_info(
+                    "Isaac Sim assets version {} found at {}".format(
+                        ver_asset, cloud_assetsURL
+                    )
+                )
                 return cloud_assetsURL
 
     carb.log_warn("Could not find Isaac Sim assets folder")
@@ -567,7 +621,9 @@ def get_assets_root_path() -> typing.Union[str, None]:
 
     # 1 - Check /persistent/isaac/asset_root/default setting
     carb.log_info("Check /persistent/isaac/asset_root/default setting")
-    default_asset_root = carb.settings.get_settings().get("/persistent/isaac/asset_root/default")
+    default_asset_root = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/default"
+    )
     if default_asset_root:
         result = check_server(default_asset_root, "/Isaac", timeout)
         if result:
@@ -589,7 +645,9 @@ def get_assets_root_path() -> typing.Union[str, None]:
                     return server_name
 
     # 3 - Check cloud for /Assets/Isaac/{version_major}.{version_minor} folder
-    cloud_assets_url = carb.settings.get_settings().get("/persistent/isaac/asset_root/cloud")
+    cloud_assets_url = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/cloud"
+    )
     carb.log_info("Checking {}...".format(cloud_assets_url))
     if cloud_assets_url:
         result = check_server(cloud_assets_url, "/Isaac", timeout)
@@ -618,7 +676,9 @@ async def get_assets_root_path_async() -> typing.Union[str, None]:
 
     # 1 - Check /persistent/isaac/asset_root/default setting
     carb.log_info("Check /persistent/isaac/asset_root/default setting")
-    default_asset_root = carb.settings.get_settings().get("/persistent/isaac/asset_root/default")
+    default_asset_root = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/default"
+    )
     if default_asset_root:
         result = await check_server_async(default_asset_root, "/Isaac", timeout)
         if result:
@@ -640,7 +700,9 @@ async def get_assets_root_path_async() -> typing.Union[str, None]:
                     return server_name
 
     # 3 - Check cloud for /Assets/Isaac/{version_major}.{version_minor} folder
-    cloud_assets_url = carb.settings.get_settings().get("/persistent/isaac/asset_root/cloud")
+    cloud_assets_url = carb.settings.get_settings().get(
+        "/persistent/isaac/asset_root/cloud"
+    )
     carb.log_info("Checking {}...".format(cloud_assets_url))
     if cloud_assets_url:
         result = await check_server_async(cloud_assets_url, "/Isaac", timeout)

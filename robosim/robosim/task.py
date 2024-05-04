@@ -1,18 +1,22 @@
 from enum import Enum
 
 import logging
+
 logging.basicConfig(level=logging.INFO)
+
 
 class TaskClass(Enum):
     CONTROL_TASK = 0
     DATA_TASK = 1
     ASYNC_DATA_TASK = 2
 
+
 class TaskStatus(Enum):
     PENDING = 0
     RUNNING = 1
     COMPLETED = 2
     FAILED = 3
+
 
 class TaskFactory:
     def __init__(self):
@@ -21,7 +25,9 @@ class TaskFactory:
     def register_task(self, creator, task_class=TaskClass.CONTROL_TASK):
         self.register_task_type(
             creator.__name__,
-            lambda name, *args, **kwargs: Task(name, creator, task_class, *args, **kwargs)
+            lambda name, *args, **kwargs: Task(
+                name, creator, task_class, *args, **kwargs
+            ),
         )
 
     def register_task_type(self, task_type, creator):
@@ -36,10 +42,10 @@ class TaskFactory:
             return creator(task_name, *args, **kwargs)
         else:
             return creator(task_type, *args, **kwargs)
-    
+
     def get_task_types(self):
         return self._creators.keys()
-    
+
 
 class Task:
     def __init__(self, name, function, task_class, *args, **kwargs):
@@ -54,6 +60,6 @@ class Task:
             return self.function(*self.args, **self.kwargs)
         except Exception as e:
             logging.error(f"Error executing task {self.name}: {e}")
-    
+
     def __str__(self):
         return f"Task: {self.name}\n    Function: {self.function}\n    Args: {self.args}\n    Kwargs: {self.kwargs}"

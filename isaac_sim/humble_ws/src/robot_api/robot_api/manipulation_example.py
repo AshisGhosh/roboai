@@ -16,9 +16,6 @@ from moveit.planning import (
     MultiPipelinePlanRequestParameters,
 )
 
-from rclpy.node import Node
-from rcl_interfaces.srv import GetParameters
-
 
 def plan_and_execute(
     robot,
@@ -53,9 +50,7 @@ def plan_and_execute(
     time.sleep(sleep_time)
 
 
-
 def main():
-
     ###################################################################
     # MoveItPy Setup
     ###################################################################
@@ -64,6 +59,7 @@ def main():
 
     from moveit_configs_utils import MoveItConfigsBuilder
     from ament_index_python.packages import get_package_share_directory
+
     moveit_config = (
         MoveItConfigsBuilder(
             robot_name="panda", package_name="moveit_resources_panda_moveit_config"

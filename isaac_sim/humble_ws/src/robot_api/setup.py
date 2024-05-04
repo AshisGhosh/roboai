@@ -1,28 +1,27 @@
 from setuptools import find_packages, setup
 
-package_name = 'robot_api'
+package_name = "robot_api"
 
 setup(
     name=package_name,
-    version='0.0.0',
-    packages=find_packages(exclude=['test']),
+    version="0.0.0",
+    packages=find_packages(exclude=["test"]),
     data_files=[
-        ('share/ament_index/resource_index/packages',
-            ['resource/' + package_name]),
-        ('share/' + package_name, ['package.xml']),
-        ('share/' + package_name + "/config", ['config/moveit_franka_python.yaml'])
+        ("share/ament_index/resource_index/packages", ["resource/" + package_name]),
+        ("share/" + package_name, ["package.xml"]),
+        ("share/" + package_name + "/config", ["config/moveit_franka_python.yaml"]),
     ],
-    install_requires=['setuptools'],
+    install_requires=["setuptools"],
     zip_safe=True,
-    maintainer='root',
-    maintainer_email='root@todo.todo',
-    description='TODO: Package description',
-    license='TODO: License declaration',
-    tests_require=['pytest'],
+    maintainer="root",
+    maintainer_email="root@todo.todo",
+    description="TODO: Package description",
+    license="TODO: License declaration",
+    tests_require=["pytest"],
     entry_points={
-        'console_scripts': [
-            'manipulation_example = robot_api.manipulation_example:main',
-            'manipulation_test = robot_api.manipulation_test:main',
+        "console_scripts": [
+            "manipulation_example = robot_api.manipulation_example:main",
+            "manipulation_test = robot_api.manipulation_test:main",
         ],
     },
 )

@@ -18,7 +18,7 @@ ckpt_path = "models/lift_ph_low_dim_epoch_1000_succ_100.pth"
 # Lift (Proficient Human)
 urllib.request.urlretrieve(
     "http://downloads.cs.stanford.edu/downloads/rt_benchmark/model_zoo/lift/bc_rnn/lift_ph_low_dim_epoch_1000_succ_100.pth",
-    filename=ckpt_path
+    filename=ckpt_path,
 )
 
 assert os.path.exists(ckpt_path)
@@ -26,19 +26,30 @@ assert os.path.exists(ckpt_path)
 device = TorchUtils.get_torch_device(try_to_use_cuda=True)
 
 # restore policy
-policy, ckpt_dict = FileUtils.policy_from_checkpoint(ckpt_path=ckpt_path, device=device, verbose=True)
+policy, ckpt_dict = FileUtils.policy_from_checkpoint(
+    ckpt_path=ckpt_path, device=device, verbose=True
+)
 
 # create environment from saved checkpoint
 env, _ = FileUtils.env_from_checkpoint(
-    ckpt_dict=ckpt_dict, 
-    render=True, # we won't do on-screen rendering in the notebook
-    render_offscreen=True, # render to RGB images for video
+    ckpt_dict=ckpt_dict,
+    render=True,  # we won't do on-screen rendering in the notebook
+    render_offscreen=True,  # render to RGB images for video
     verbose=True,
 )
 
-def rollout(policy, env, horizon, render=False, video_writer=None, video_skip=5, camera_names=None):
+
+def rollout(
+    policy,
+    env,
+    horizon,
+    render=False,
+    video_writer=None,
+    video_skip=5,
+    camera_names=None,
+):
     """
-    Helper function to carry out rollouts. Supports on-screen rendering, off-screen rendering to a video, 
+    Helper function to carry out rollouts. Supports on-screen rendering, off-screen rendering to a video,
     and returns the rollout trajectory.
     Args:
         policy (instance of RolloutPolicy): policy loaded from a checkpoint
@@ -64,14 +75,13 @@ def rollout(policy, env, horizon, render=False, video_writer=None, video_skip=5,
     obs = env.reset_to(state_dict)
 
     video_count = 0  # video frame counter
-    total_reward = 0.
+    total_reward = 0.0
 
     if render:
         env.render(mode="human", camera_name=camera_names[0])
-    
+
     try:
         for step_i in range(horizon):
-
             # get action from policy
             act = policy(ob=obs)
 
@@ -89,8 +99,17 @@ def rollout(policy, env, horizon, render=False, video_writer=None, video_skip=5,
                 if video_count % video_skip == 0:
                     video_img = []
                     for cam_name in camera_names:
-                        video_img.append(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name))
-                    video_img = np.concatenate(video_img, axis=1) # concatenate horizontally
+                        video_img.append(
+                            env.render(
+                                mode="rgb_array",
+                                height=512,
+                                width=512,
+                                camera_name=cam_name,
+                            )
+                        )
+                    video_img = np.concatenate(
+                        video_img, axis=1
+                    )  # concatenate horizontally
                     video_writer.append_data(video_img)
                 video_count += 1
 
@@ -109,6 +128,7 @@ def rollout(policy, env, horizon, render=False, video_writer=None, video_skip=5,
 
     return stats
 
+
 rollout_horizon = 400
 np.random.seed(0)
 torch.manual_seed(0)
@@ -116,14 +136,14 @@ video_path = "output/rollout.mp4"
 video_writer = imageio.get_writer(video_path, fps=20)
 
 stats = rollout(
-    policy=policy, 
-    env=env, 
-    horizon=rollout_horizon, 
+    policy=policy,
+    env=env,
+    horizon=rollout_horizon,
     render=True,
-    # render=False, 
-    # video_writer=video_writer, 
-    # video_skip=5, 
-    camera_names=["frontview", "agentview"]
+    # render=False,
+    # video_writer=video_writer,
+    # video_skip=5,
+    camera_names=["frontview", "agentview"],
 )
 print(stats)
 video_writer.close()

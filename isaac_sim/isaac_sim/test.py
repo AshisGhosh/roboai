@@ -16,23 +16,23 @@ GRAPH_PATH = "/ActionGraph"
 REALSENSE_VIEWPORT_NAME = "realsense_viewport"
 
 CONFIG = {
-            "renderer": "RayTracedLighting", 
-            "headless": False,
-            "window_width":   2560,
-            "window_height":  1440
-        }
+    "renderer": "RayTracedLighting",
+    "headless": False,
+    "window_width": 2560,
+    "window_height": 1440,
+}
 
 start_time = time.time()
 sim = SimulationApp(CONFIG)
 carb.log_warn(f"Time taken to load simulation: {time.time() - start_time} seconds")
 
-from omni.isaac.core import World # noqa E402
-from omni.isaac.core.utils import ( # noqa E402
+from omni.isaac.core import World  # noqa E402
+from omni.isaac.core.utils import (  # noqa E402
     nucleus,
     stage,
     prims,
     rotations,
-    viewports
+    viewports,
 )
 from pxr import Gf, UsdGeom  # noqa E402
 
@@ -52,7 +52,9 @@ start_time = time.time()
 stage.add_reference_to_stage(
     assets_root_path + BACKGROUND_USD_PATH, BACKGROUND_STAGE_PATH
 )
-carb.log_warn(f"Time taken to add reference to stage: {time.time() - start_time} seconds")
+carb.log_warn(
+    f"Time taken to add reference to stage: {time.time() - start_time} seconds"
+)
 
 
 start_time = time.time()
@@ -98,7 +100,6 @@ prims.create_prim(
 )
 
 
-
 carb.log_warn(f"Time taken to create prims: {time.time() - start_time} seconds")
 
 sim.update()
@@ -116,7 +117,9 @@ realsense_prim.GetFocusDistanceAttr().Set(400)
 viewport = omni.ui.Workspace.get_window("Viewport")
 rs_viewport = omni.ui.Workspace.get_window(REALSENSE_VIEWPORT_NAME)
 rs_viewport.dock_in(viewport, omni.ui.DockPosition.RIGHT, ratio=0.3)
-carb.log_warn(f"{REALSENSE_VIEWPORT_NAME} docked in {viewport.title}: {rs_viewport.docked}")
+carb.log_warn(
+    f"{REALSENSE_VIEWPORT_NAME} docked in {viewport.title}: {rs_viewport.docked}"
+)
 
 
 while sim.is_running():

@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from robotic_grasping_server.robotic_grasping import GraspGenerator
 
 import logging
+
 log = logging.getLogger("robotic_grasping_server app")
 log.setLevel(logging.INFO)
 
@@ -33,15 +34,18 @@ app.add_middleware(
 async def read_root():
     return {"message": "Hello, FastAPI! This is the robotic grasping server."}
 
+
 @app.on_event("startup")
 async def startup_event():
     log.info("Starting up the grasp server...")
     grasp.load_model()
 
+
 @app.post("/get_grasps")
-async def get_grasps(rgb_image:  UploadFile = File(...), depth_image: UploadFile = File(...)):
+async def get_grasps(
+    rgb_image: UploadFile = File(...), depth_image: UploadFile = File(...)
+):
     log.debug("Received get_grasp request.")
     rgb_image = Image.open(rgb_image.file)
     depth_image = Image.open(depth_image.file)
     return grasp.run(rgb_image, depth_image)
-    

@@ -11,15 +11,20 @@ from shared.utils.robotic_grasping_client import _get_grasps_from_rgb_and_depth
 import shared.utils.llm_utils as llm_utils
 
 import logging
+
 log = logging.getLogger("robosim robot grasp")
 log.setLevel(logging.DEBUG)
+
 
 class GraspMethod(Enum):
     GRASP_DET_SEG = "grasp_det_seg"
     GR_CONVNET = "gr_convnet"
 
+
 class Grasp:
-    def __init__(self, r_bbox, image, depth, env, bbox=None, cls=None, cls_name=None, score=None):
+    def __init__(
+        self, r_bbox, image, depth, env, bbox=None, cls=None, cls_name=None, score=None
+    ):
         log.debug("Initializing Grasp object.")
         self.r_bbox = r_bbox
         self.image = image
@@ -37,21 +42,26 @@ class Grasp:
         self.grasp_pose = None
         self.retract_poses = []
         log.debug(f"Generated grasp for {self}")
-    
+
     def generate_grasp_sequence(self):
         log.info(f"Generating grasp sequence for {self}")
         self.grasp_pose = self.get_grasp_pose_from_r_bbox()
         return self.appoach_poses, self.grasp_pose, self.retract_poses
-    
+
     def get_grasp_pose_from_r_bbox(self):
         # Get the center of the bounding box
         log.debug(f"Getting grasp pose from r_bbox: {self.r_bbox}")
         # pixels work in y, x not x, y
-        center = int(np.mean([coord[1] for coord in self.r_bbox])), int(np.mean([coord[0] for coord in self.r_bbox]))
+        center = (
+            int(np.mean([coord[1] for coord in self.r_bbox])),
+            int(np.mean([coord[0] for coord in self.r_bbox])),
+        )
         log.debug(f"Center of the bounding box: {center}")
         # Get the world coordinates of the center
         log.debug(f"{np.array(center).shape} -- {np.array(self.depth).shape}")
-        world_coords = self.camera.get_world_coords_from_pixels(np.array(center), np.array(self.depth))
+        world_coords = self.camera.get_world_coords_from_pixels(
+            np.array(center), np.array(self.depth)
+        )
         log.debug(f"World coordinates of the center: {world_coords}")
         self.grasp_postion = world_coords
 
@@ -69,6 +79,7 @@ class Grasp:
     def __str__(self):
         return f"Grasp: {self.cls_name} with score {self.score} at r_bbox {self.r_bbox}"
 
+
 class GraspHandler:
     def __init__(self, robot):
         self.robot = robot
@@ -79,10 +90,15 @@ class GraspHandler:
         if visualize:
             self.show_image(res["image"])
         return res["result"]
-    
+
     async def get_grasp_image(self) -> Image:
         # turn off marker visualization
-        markers = ["gripper0_grip_site", "gripper0_grip_site_cylinder", "gripper_goal", "grasp_marker"]
+        markers = [
+            "gripper0_grip_site",
+            "gripper0_grip_site_cylinder",
+            "gripper_goal",
+            "grasp_marker",
+        ]
         for marker in markers:
             self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0
 
@@ -91,16 +107,25 @@ class GraspHandler:
 
         # turn on marker visualization
         for marker in markers:
-            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0.25
+            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = (
+                0.25
+            )
 
         return img
-    
+
     async def get_grasp_image_and_depth(self):
         # turn off marker visualization
-        markers = ["gripper0_grip_site", "gripper0_grip_site_cylinder", "gripper_goal", "grasp_marker"]
+        markers = [
+            "gripper0_grip_site",
+            "gripper0_grip_site_cylinder",
+            "gripper_goal",
+            "grasp_marker",
+        ]
         for marker in markers:
-            self.env.sim.model.site_rgba[self.robot.robosim.env.sim.model.site_name2id(marker)][3] = 0
-        
+            self.env.sim.model.site_rgba[
+                self.robot.robosim.env.sim.model.site_name2id(marker)
+            ][3] = 0
+
         self.env.step(np.zeros(self.env.action_dim))
         im = self.env._get_observations()
         img = Image.fromarray(im["robot0_eye_in_hand_image"][::-1])
@@ -108,18 +133,24 @@ class GraspHandler:
 
         # turn on marker visualization
         for marker in markers:
-            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = 0.25
+            self.env.sim.model.site_rgba[self.env.sim.model.site_name2id(marker)][3] = (
+                0.25
+            )
 
         return img, depth
-    
+
     async def get_grasp_image_and_depth_image(self):
         img, depth = await self.get_grasp_image_and_depth()
         squeezed_depth = np.squeeze(depth)
-        normalized_depth = (squeezed_depth - np.min(squeezed_depth)) / (np.max(squeezed_depth) - np.min(squeezed_depth)) * 255
+        normalized_depth = (
+            (squeezed_depth - np.min(squeezed_depth))
+            / (np.max(squeezed_depth) - np.min(squeezed_depth))
+            * 255
+        )
         depth_uint8 = normalized_depth.astype(np.uint8)
         depth_image = Image.fromarray(depth_uint8)
         return img, depth_image, depth
-    
+
     async def get_grasp(self, obj_name, method=GraspMethod.GRASP_DET_SEG):
         if method == GraspMethod.GRASP_DET_SEG:
             log.debug("Getting grasp from grasp_det_seg...")
@@ -143,8 +174,8 @@ class GraspHandler:
         candidate_objs = [obj["cls_name"].replace("_", " ") for obj in grasps]
         log.info(f"Getting closest object to '{obj_name}' from {candidate_objs}")
         closest_obj = await llm_utils.get_closest_text(obj_name, candidate_objs)
-        log.info(f"Closest object: {closest_obj}") 
-        grasp = grasps[candidate_objs.index(closest_obj)]  
+        log.info(f"Closest object: {closest_obj}")
+        grasp = grasps[candidate_objs.index(closest_obj)]
         g_obj = Grasp(
             cls=grasp["cls"],
             cls_name=grasp["cls_name"],
@@ -153,10 +184,10 @@ class GraspHandler:
             r_bbox=grasp["r_bbox"],
             image=img,
             depth=depth,
-            env = self.robot.robosim.env
+            env=self.robot.robosim.env,
         )
         return grasp, g_obj.generate_grasp_sequence()
-    
+
     async def get_grasp_gr_convnet(self, obj_name):
         log.debug("Getting grasp image and depth...")
         img, depth_image, depth = await self.get_grasp_image_and_depth_image()
@@ -172,14 +203,13 @@ class GraspHandler:
             r_bbox=grasp["r_bbox"],
             image=img,
             depth=depth,
-            env = self.robot.robosim.env
+            env=self.robot.robosim.env,
         )
         return grasp, g_obj.generate_grasp_sequence()
 
-    
     async def check_server(self):
         return await _check_server()
-    
+
     def show_image(self, base64_image):
         image_bytes = base64.b64decode(base64_image)
         nparr = np.frombuffer(image_bytes, np.uint8)
@@ -189,4 +219,3 @@ class GraspHandler:
         cv2.imshow("Image", image)
         cv2.waitKey(0)
         cv2.destroyAllWindows()
-

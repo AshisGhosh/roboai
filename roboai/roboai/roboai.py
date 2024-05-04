@@ -1,26 +1,34 @@
 from pydantic import BaseModel
 from typing import Callable
-import base64 # noqa: F401
-from PIL import Image # noqa: F401
+import base64  # noqa: F401
+from PIL import Image  # noqa: F401
 
 from roboai.agent import Agent
 from roboai.task import Task
 
-from shared.utils.robosim_client import get_objects_on_table, pick, place, get_image, get_grasp_image # noqa: F401
-from shared.utils.model_server_client import answer_question_from_image # noqa: F401
-import shared.utils.gradio_client as gradio # noqa: F401 
-import shared.utils.replicate_client as replicate # noqa: F401
+from shared.utils.robosim_client import (
+    get_objects_on_table,
+    pick,
+    place,
+    get_image,
+    get_grasp_image,
+)  # noqa: F401
+from shared.utils.model_server_client import answer_question_from_image  # noqa: F401
+import shared.utils.gradio_client as gradio  # noqa: F401
+import shared.utils.replicate_client as replicate  # noqa: F401
 
 import logging
 
 log = logging.getLogger("roboai")
 log.setLevel(logging.DEBUG)
 
+
 class Tool(BaseModel):
     name: str
     func: Callable
     description: str
     example: str
+
 
 def extract_code(raw_input, language="python"):
     start_delimiter = f"```{language}"
@@ -48,11 +56,11 @@ class RobotJob:
         pass
 
     def run(self):
-        '''
+        """
         Job to:
             1. Understand the scene
             2. Create a plan to clear the table
-        '''        
+        """
 
         im = get_image()
 
@@ -65,7 +73,7 @@ class RobotJob:
             model="ollama/llava:latest",
             system_message="""
             You are an agent that describes the scene. Focus on the objects on the table.
-            """
+            """,
         )
         task_scene.add_solving_agent(scene_agent)
         output = task_scene.run()
@@ -74,22 +82,22 @@ class RobotJob:
         # if "result" not in output.keys():
         #     log.error("No result found.")
         #     return
-        
+
         # output = output["result"]
 
         task = Task(
             f"Given the following summary, return just a list in python of the objects on the table. The table is not an object. Summary: \n{output}",
             expected_output_format="""
                 objects_on_table = ["Object 1", "Object 2", "Object 3"]
-            """
-            )
+            """,
+        )
         analyzer_agent = Agent(
             name="Analyzer",
             model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
             system_message="""
             You are a helpful agent that concisely responds with only code.
             Use only the provided functions, do not add any extra code.
-            """
+            """,
         )
         task.add_solving_agent(analyzer_agent)
         output = task.run()
@@ -113,20 +121,20 @@ class RobotJob:
             #     5. pick object3
             #     6. place object3
             # """
-            expected_output_format="A numbered list of steps constrained to the provided functions."
+            expected_output_format="A numbered list of steps constrained to the provided functions.",
         )
         plan_task.register_tool(
             name="pick",
             func=pick,
             description="Robot picks up the provided arg 'object_name'",
-            example='"pick_success = pick(object_name="Object 1")" --> Returns: True '
+            example='"pick_success = pick(object_name="Object 1")" --> Returns: True ',
         )
 
         plan_task.register_tool(
             name="place",
             func=place,
             description="Robot places the provided arg 'object_name'",
-            example='"place_success = place(object_name="Object 1")" --> Returns: True '
+            example='"place_success = place(object_name="Object 1")" --> Returns: True ',
         )
 
         planner_agent = Agent(
@@ -136,14 +144,14 @@ class RobotJob:
             You are a planner that breaks down tasks into steps for robots.
             Create a conscise set of steps that a robot can do.
             Do not add any extra steps.
-            """ + plan_task.generate_tool_prompt()
+            """
+            + plan_task.generate_tool_prompt(),
         )
 
         plan_task.add_solving_agent(planner_agent)
         # log.info(plan_task)
         output = plan_task.run()
         log.info(output)
-
 
         plan_generated = True
         code = extract_code(output)
@@ -162,18 +170,18 @@ class RobotJob:
                 f"""Return python code to execute the plan using only the provided functions.
                     {output}
                 """
-                )
+            )
             coder_task.register_tool(
                 name="pick",
                 func=pick,
                 description="Robot picks up the provided arg 'object_name'",
-                example='"pick_success = pick(object_name="Object 1")" --> Returns: True '
+                example='"pick_success = pick(object_name="Object 1")" --> Returns: True ',
             )
             coder_task.register_tool(
                 name="place",
                 func=place,
                 description="Robot places the provided arg 'object_name'",
-                example='"place_success = place(object_name="Object 1")" --> Returns: True '
+                example='"place_success = place(object_name="Object 1")" --> Returns: True ',
             )
             coder_agent = Agent(
                 name="Coder",
@@ -182,7 +190,8 @@ class RobotJob:
                 system_message="""
                 You are a coder that writes concise and exact code to execute the plan.
                 Use only the provided functions.
-                """ + coder_task.generate_tool_prompt()
+                """
+                + coder_task.generate_tool_prompt(),
             )
             coder_task.add_solving_agent(coder_agent)
             log.info(coder_task)
@@ -196,12 +205,12 @@ class RobotJob:
 if __name__ == "__main__":
     # job = RobotJob()
     # job.run()
-    
+
     # test vqa
 
     # output = gradio.qwen_vl_max_answer_question_from_image(Image.open("shared/data/tmp.png"), "What is the color of the table?")
     import shared.utils.huggingface_client as hf
 
     output = hf.vila_query("What is the color of the table?")
-   
+
     print(output)

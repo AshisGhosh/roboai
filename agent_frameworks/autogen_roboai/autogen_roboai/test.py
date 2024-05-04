@@ -8,10 +8,13 @@ from typing_extensions import Annotated
 
 
 import logging
+
 logging.basicConfig(level=logging.INFO)
 
 filter_dict = {"tags": ["zephyr"]}
-config_list = autogen.config_list_from_json(env_or_file="OAI_CONFIG_LIST", filter_dict=filter_dict)
+config_list = autogen.config_list_from_json(
+    env_or_file="OAI_CONFIG_LIST", filter_dict=filter_dict
+)
 assert len(config_list) == 1
 
 llm_config = {
@@ -23,15 +26,15 @@ task = "Create a list of steps for a robot to clear the table."
 
 # create an AssistantAgent instance named "assistant" with the LLM configuration.
 assistant = AssistantAgent(
-    name="assistant", 
+    name="assistant",
     llm_config=llm_config,
     system_message="""
         You are a helpful assistant who can break down tasks into steps. 
         Please help the user with their task.
         Use the functions provided to learn more about the task.
         Respond with 'TERMINATE' when you are done.
-        """
-    )
+        """,
+)
 
 # Create a temporary directory to store the code files.
 temp_dir = tempfile.TemporaryDirectory()
@@ -48,19 +51,25 @@ user_proxy = UserProxyAgent(
     system_message="A proxy for the user for executing code.",
     code_execution_config={"executor": executor},
     is_termination_msg=lambda x: "content" in x
-        and x["content"] is not None
-        and "TERMINATE" in x["content"]
-        and '``' not in x["content"]
-    )
+    and x["content"] is not None
+    and "TERMINATE" in x["content"]
+    and "``" not in x["content"],
+)
+
 
 @user_proxy.register_for_execution()
 @assistant.register_for_llm(
     name="identify_objs_on_table",
     description="Python function to get a list of objects on the table.",
 )
-def identify_objs_on_table(message: Annotated[str, "Message to ask the inspector for the objects on the table."]) -> str:
+def identify_objs_on_table(
+    message: Annotated[
+        str, "Message to ask the inspector for the objects on the table."
+    ],
+) -> str:
     logging.info("Asked for objects.")
     return "Milk, Cereal, a Can."
+
 
 # inspector = AssistantAgent(
 #     name="inspector",

@@ -4,9 +4,11 @@ from enum import Enum
 import robosuite as suite
 from robosuite import load_controller_config
 
+
 class ControllerType(Enum):
     JOINT_VELOCITY = 1
     OSC_POSE = 2
+
 
 @dataclass
 class OSCControlStep:
@@ -19,13 +21,21 @@ class OSCControlStep:
     gripper: float
 
     def to_list(self):
-        return [self.dx, self.dy, self.dz, self.droll, self.dpitch, self.dyaw, self.gripper]
+        return [
+            self.dx,
+            self.dy,
+            self.dz,
+            self.droll,
+            self.dpitch,
+            self.dyaw,
+            self.gripper,
+        ]
 
 
 def dummy_joint_vel_control(action, env, step):
-    '''
+    """
     Dummy control function for joint velocity control
-    '''
+    """
     if action is None:
         action = np.random.randn(env.robots[0].dof)  # sample random action
     for i, a in enumerate(action):
@@ -35,15 +45,15 @@ def dummy_joint_vel_control(action, env, step):
 
 
 def dummy_osc_control(action, env, step):
-    '''
+    """
     Dummy control function for OSC control
     dx, dy, dz, droll, dpitch, dyaw, gripper
-    '''
+    """
     if action is None:
         action = OSCControlStep(0, 0, 0, 0, 0, 0, 0)
     else:
         action = OSCControlStep(*action)
-    
+
     action.dx = 0.1 * np.sin(step / 100)
     action.dy = 0.1 * np.cos(step / 100)
     action.dz = 0.1 * np.sin(step / 100)
@@ -59,7 +69,7 @@ class robosim:
     def __init__(self, controller_type=ControllerType.OSC_POSE):
         self.controller_type = controller_type
         self.update_action = self.get_action_func()
-    
+
     def get_action_func(self):
         if self.controller_type == ControllerType.JOINT_VELOCITY:
             return dummy_joint_vel_control
@@ -71,11 +81,13 @@ class robosim:
     def start(self):
         print("Starting Robosuite Simulation...")
 
-        config = load_controller_config(default_controller=self.controller_type.name) # load default controller config
+        config = load_controller_config(
+            default_controller=self.controller_type.name
+        )  # load default controller config
 
         # create environment instance
         env = suite.make(
-            env_name="Lift", # try with other tasks like "Stack" and "Door"
+            env_name="Lift",  # try with other tasks like "Stack" and "Door"
             robots="Panda",  # try with other robots like "Sawyer" and "Jaco"
             gripper_types="default",
             controller_configs=config,
@@ -84,8 +96,8 @@ class robosim:
             render_camera="frontview",
             camera_names=["frontview", "agentview"],
             has_offscreen_renderer=True,
-            use_object_obs=False,                  
-            use_camera_obs=True,                       
+            use_object_obs=False,
+            use_camera_obs=True,
         )
 
         # reset the environment
@@ -96,7 +108,6 @@ class robosim:
             action = self.update_action(action, env, i)
             obs, reward, done, info = env.step(action)  # take action in the environment
             env.render()  # render on display
-
 
 
 if __name__ == "__main__":

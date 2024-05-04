@@ -12,6 +12,7 @@ from fastapi.responses import JSONResponse
 from grasp_server.grasp_det_seg import GraspServer
 
 import logging
+
 logging.basicConfig(level=logging.INFO)
 
 # Create GraspServer instance
@@ -41,12 +42,13 @@ app.add_middleware(
 async def read_root():
     return {"message": "Hello, FastAPI! This is the grasp server."}
 
+
 @app.post("/detect")
 async def detect(file: UploadFile = File(...)):
     # Read the image file
     image_bytes = await file.read()
     nparr = np.frombuffer(image_bytes, np.uint8)
-    
+
     # Decode the image
     image = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
 
@@ -55,10 +57,12 @@ async def detect(file: UploadFile = File(...)):
     # Return the result
     return JSONResponse(content={"result": result, "image": get_image_response(img)})
 
+
 @app.post("/test")
 async def test():
     result, img = grasp.test_detect()
     return JSONResponse(content={"result": result, "image": get_image_response(img)})
+
 
 def get_image_response(image):
     buf = io.BytesIO()
@@ -67,4 +71,3 @@ def get_image_response(image):
     base64_image = base64.b64encode(buf.getvalue()).decode("utf-8")
     return base64_image
     # return StreamingResponse(buf, media_type="image/jpeg")
-    

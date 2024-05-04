@@ -14,17 +14,22 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-
     map_yaml_file = LaunchConfiguration(
         "map_yaml_path",
         default=os.path.join(
-            get_package_share_directory("isaac_ros_navigation_goal"), "assets", "carter_warehouse_navigation.yaml"
+            get_package_share_directory("isaac_ros_navigation_goal"),
+            "assets",
+            "carter_warehouse_navigation.yaml",
         ),
     )
 
     goal_text_file = LaunchConfiguration(
         "goal_text_file_path",
-        default=os.path.join(get_package_share_directory("isaac_ros_navigation_goal"), "assets", "goals.txt"),
+        default=os.path.join(
+            get_package_share_directory("isaac_ros_navigation_goal"),
+            "assets",
+            "goals.txt",
+        ),
     )
 
     navigation_goal_node = Node(

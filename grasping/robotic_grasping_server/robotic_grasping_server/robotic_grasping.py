@@ -1,4 +1,3 @@
-
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -14,14 +13,21 @@ from PIL import Image
 
 
 class GraspGenerator:
-    def __init__(self, saved_model_path='/robotic-grasping/trained-models/cornell-randsplit-rgbd-grconvnet3-drop1-ch32/epoch_19_iou_0.98', visualize=False, force_cpu=False):
+    def __init__(
+        self,
+        saved_model_path="/robotic-grasping/trained-models/cornell-randsplit-rgbd-grconvnet3-drop1-ch32/epoch_19_iou_0.98",
+        visualize=False,
+        force_cpu=False,
+    ):
         self.saved_model_path = saved_model_path
 
         self.saved_model_path = saved_model_path
         self.model = None
         self.device = get_device(force_cpu=force_cpu)
 
-        self.cam_data = CameraData(include_depth=True, include_rgb=True, output_size=360)
+        self.cam_data = CameraData(
+            include_depth=True, include_rgb=True, output_size=360
+        )
 
         if visualize:
             self.fig = plt.figure(figsize=(10, 10))
@@ -31,7 +37,7 @@ class GraspGenerator:
     def load_model(self):
         # monkey patching
         np.float = float
-        print('Loading model... ')
+        print("Loading model... ")
         self.model = torch.load(self.saved_model_path, map_location=self.device)
         self.model.to(self.device)  # Ensure model parameters are on the correct device
 
@@ -43,48 +49,54 @@ class GraspGenerator:
             xc = x.to(self.device)
             pred = self.model.predict(xc)
 
-        q_img, ang_img, width_img = post_process_output(pred['pos'], pred['cos'], pred['sin'], pred['width'])
+        q_img, ang_img, width_img = post_process_output(
+            pred["pos"], pred["cos"], pred["sin"], pred["width"]
+        )
         grasps = detect_grasps(q_img, ang_img, width_img)
         for grasp in grasps:
             print(grasp.as_gr)
 
-
         if self.fig:
-            plot_grasp(fig=self.fig, rgb_img=self.cam_data.get_rgb(rgb, False), grasps=grasps, save=True)
-        
+            plot_grasp(
+                fig=self.fig,
+                rgb_img=self.cam_data.get_rgb(rgb, False),
+                grasps=grasps,
+                save=True,
+            )
+
         return grasps
 
     def run_test(self):
-        rgb = Image.open('shared/data/test_pair1_rgb.png')
+        rgb = Image.open("shared/data/test_pair1_rgb.png")
         rgb = np.array(rgb)
         print(rgb.shape)
-        depth = Image.open('shared/data/test_pair1_depth.png')
+        depth = Image.open("shared/data/test_pair1_depth.png")
 
         depth = np.array(depth)
         depth = np.expand_dims(depth, axis=2)
         print(depth.shape)
         self.generate(rgb, depth)
-    
+
     def run(self, rgb, depth):
         rgb = np.array(rgb)
         depth = np.array(depth)
         depth = np.expand_dims(depth, axis=2)
         grasps = self.generate(rgb, depth)
         grasp_dict = []
-        print (grasps[0].as_gr)
+        print(grasps[0].as_gr)
         for grasp in grasps:
-            r_bbox = [ [pt[0],pt[1]] for pt in grasp.as_gr.points]
+            r_bbox = [[pt[0], pt[1]] for pt in grasp.as_gr.points]
             grasp_dict.append({"r_bbox": r_bbox})
 
         return grasp_dict
 
-    
+
 if __name__ == "__main__":
     np.float = float
     generator = GraspGenerator(
-        saved_model_path='/robotic-grasping/trained-models/cornell-randsplit-rgbd-grconvnet3-drop1-ch32/epoch_19_iou_0.98',
+        saved_model_path="/robotic-grasping/trained-models/cornell-randsplit-rgbd-grconvnet3-drop1-ch32/epoch_19_iou_0.98",
         visualize=True,
-        force_cpu=False
+        force_cpu=False,
     )
     generator.load_model()
     generator.run_test()

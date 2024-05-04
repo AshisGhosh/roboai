@@ -36,10 +36,12 @@ class Agent:
         response = completion(**completion_args)
         self._last_response = response
         self._last_response_content = response["choices"][0]["message"]["content"]
-        self.messages.append({"content": self._last_response_content, "role": "assistant"})
-        
+        self.messages.append(
+            {"content": self._last_response_content, "role": "assistant"}
+        )
+
         return self._last_response_content
-    
+
     def task_chat(self, messages):
         completion_args = {
             "model": self.model,
@@ -47,28 +49,28 @@ class Agent:
         }
         if self.base_url:
             completion_args["base_url"] = self.base_url
-        
+
         start = time.time()
         response = completion(**completion_args)
         log.debug(f"Completion time: {time.time() - start}")
         self._last_response = response
-        self._last_response_content = response["choices"][0]["message"]["content"]        
+        self._last_response_content = response["choices"][0]["message"]["content"]
         return self._last_response_content
-    
+
     def get_last_response(self):
         return self._last_response_content
-    
+
     def get_last_response_obj(self):
         return self._last_response
-    
+
     def clear_messages(self):
         self.messages = []
-    
+
     def set_system_message(self, message):
         if not message:
             log.warn(f"System message for agent '{self.name}' is empty.")
             return
-        
+
         system_message = None
         for m in self.messages:
             if m["role"] == "system":
@@ -78,5 +80,5 @@ class Agent:
             system_message["content"] = message
         else:
             self.messages.append({"content": message, "role": "system"})
-        
+
         self.system_message = message

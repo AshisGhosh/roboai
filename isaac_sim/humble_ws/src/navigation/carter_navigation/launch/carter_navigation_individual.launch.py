@@ -16,9 +16,10 @@ from launch.substitutions import LaunchConfiguration
 
 
 def generate_launch_description():
-
     # Get the launch directory
-    nav2_launch_dir = os.path.join(get_package_share_directory("nav2_bringup"), "launch")
+    nav2_launch_dir = os.path.join(
+        get_package_share_directory("nav2_bringup"), "launch"
+    )
 
     # Create the launch configuration variables
     slam = LaunchConfiguration("slam")
@@ -31,22 +32,32 @@ def generate_launch_description():
     autostart = LaunchConfiguration("autostart")
 
     # Declare the launch arguments
-    declare_namespace_cmd = DeclareLaunchArgument("namespace", default_value="", description="Top-level namespace")
-
-    declare_use_namespace_cmd = DeclareLaunchArgument(
-        "use_namespace", default_value="false", description="Whether to apply a namespace to the navigation stack"
+    declare_namespace_cmd = DeclareLaunchArgument(
+        "namespace", default_value="", description="Top-level namespace"
     )
 
-    declare_slam_cmd = DeclareLaunchArgument("slam", default_value="False", description="Whether run a SLAM")
+    declare_use_namespace_cmd = DeclareLaunchArgument(
+        "use_namespace",
+        default_value="false",
+        description="Whether to apply a namespace to the navigation stack",
+    )
+
+    declare_slam_cmd = DeclareLaunchArgument(
+        "slam", default_value="False", description="Whether run a SLAM"
+    )
 
     declare_map_yaml_cmd = DeclareLaunchArgument(
         "map",
-        default_value=os.path.join(nav2_launch_dir, "maps", "carter_warehouse_navigation.yaml"),
+        default_value=os.path.join(
+            nav2_launch_dir, "maps", "carter_warehouse_navigation.yaml"
+        ),
         description="Full path to map file to load",
     )
 
     declare_use_sim_time_cmd = DeclareLaunchArgument(
-        "use_sim_time", default_value="True", description="Use simulation (Isaac Sim) clock if true"
+        "use_sim_time",
+        default_value="True",
+        description="Use simulation (Isaac Sim) clock if true",
     )
 
     declare_params_file_cmd = DeclareLaunchArgument(
@@ -58,17 +69,23 @@ def generate_launch_description():
     declare_bt_xml_cmd = DeclareLaunchArgument(
         "default_bt_xml_filename",
         default_value=os.path.join(
-            get_package_share_directory("nav2_bt_navigator"), "behavior_trees", "navigate_w_replanning_and_recovery.xml"
+            get_package_share_directory("nav2_bt_navigator"),
+            "behavior_trees",
+            "navigate_w_replanning_and_recovery.xml",
         ),
         description="Full path to the behavior tree xml file to use",
     )
 
     declare_autostart_cmd = DeclareLaunchArgument(
-        "autostart", default_value="true", description="Automatically startup the nav2 stack"
+        "autostart",
+        default_value="true",
+        description="Automatically startup the nav2 stack",
     )
 
     bringup_cmd = IncludeLaunchDescription(
-        PythonLaunchDescriptionSource(os.path.join(nav2_launch_dir, "bringup_launch.py")),
+        PythonLaunchDescriptionSource(
+            os.path.join(nav2_launch_dir, "bringup_launch.py")
+        ),
         launch_arguments={
             "namespace": namespace,
             "use_namespace": use_namespace,
@@ -78,7 +95,7 @@ def generate_launch_description():
             "params_file": params_file,
             "default_bt_xml_filename": default_bt_xml_filename,
             "autostart": autostart,
-        }.items(),   
+        }.items(),
     )
 
     # Create the launch description and populate

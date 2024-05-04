@@ -17,13 +17,15 @@ from robomimic.algo import RolloutPolicy
 
 import urllib.request
 
+
 class RobomimicSim:
     def __init__(self):
         self.rollout_visualizing = False
         self.rollout_task = None
         self.render_task = None
-        self.close_renderer_flag = asyncio.Event()  # Use an asyncio Event for better coordination
-
+        self.close_renderer_flag = (
+            asyncio.Event()
+        )  # Use an asyncio Event for better coordination
 
     def setup(self):
         # Get pretrained checkpooint from the model zoo
@@ -32,7 +34,7 @@ class RobomimicSim:
         # Lift (Proficient Human)
         urllib.request.urlretrieve(
             "http://downloads.cs.stanford.edu/downloads/rt_benchmark/model_zoo/lift/bc_rnn/lift_ph_low_dim_epoch_1000_succ_100.pth",
-            filename=ckpt_path
+            filename=ckpt_path,
         )
 
         assert os.path.exists(ckpt_path)
@@ -40,24 +42,28 @@ class RobomimicSim:
         device = TorchUtils.get_torch_device(try_to_use_cuda=True)
 
         # restore policy
-        policy, ckpt_dict = FileUtils.policy_from_checkpoint(ckpt_path=ckpt_path, device=device, verbose=True)
+        policy, ckpt_dict = FileUtils.policy_from_checkpoint(
+            ckpt_path=ckpt_path, device=device, verbose=True
+        )
 
         # create environment from saved checkpoint
         env, _ = FileUtils.env_from_checkpoint(
-            ckpt_dict=ckpt_dict, 
-            render=True, 
-            render_offscreen=True, # render to RGB images for video
+            ckpt_dict=ckpt_dict,
+            render=True,
+            render_offscreen=True,  # render to RGB images for video
             verbose=True,
         )
 
         self.policy = policy
         self.env = env
-    
+
     def custom_env(self):
-        load_controller_config(default_controller="OSC_POSE") # load default controller config
+        load_controller_config(
+            default_controller="OSC_POSE"
+        )  # load default controller config
         # create environment from scratch
         env = robosuite.make(
-            env_name="Lift", # try with other tasks like "Stack" and "Door"
+            env_name="Lift",  # try with other tasks like "Stack" and "Door"
             robots="Panda",  # try with other robots like "Sawyer" and "Jaco"
             gripper_types="default",
             controller_configs=None,
@@ -66,17 +72,17 @@ class RobomimicSim:
             render_camera="frontview",
             camera_names=["frontview", "agentview"],
             has_offscreen_renderer=True,
-            use_object_obs=False,                  
-            use_camera_obs=True,                       
+            use_object_obs=False,
+            use_camera_obs=True,
         )
         self.env = env
-    
+
     async def start_rollout(self):
         if self.rollout_task is None or self.rollout_task.done():
             self.close_renderer_flag.clear()
             await self.start_renderer()
             self.rollout_task = asyncio.create_task(self.run())
-    
+
     async def close_renderer(self):
         self.close_renderer_flag.set()  # Signal to stop the tasks
         if self.render_task and not self.render_task.done():
@@ -84,18 +90,20 @@ class RobomimicSim:
         if self.rollout_task and not self.rollout_task.done():
             self.rollout_task.cancel()  # Cancel rollout task as it might be waiting for external input
             try:
-                await self.rollout_task  # Attempt to await the task to handle any cleanup
+                await (
+                    self.rollout_task
+                )  # Attempt to await the task to handle any cleanup
             except asyncio.CancelledError:
                 pass  # Expected if the task was cancelled
         self.env.base_env.close_renderer()
-    
+
     async def render(self):
         hz = 5
         while not self.close_renderer_flag.is_set():  # Use the Event for checking
             if not self.rollout_visualizing:
                 self.env.render(mode="human", camera_name="frontview")
-            await asyncio.sleep(1/hz)
-    
+            await asyncio.sleep(1 / hz)
+
     async def start_renderer(self):
         if self.render_task is None or self.render_task.done():
             self.close_renderer_flag.clear()
@@ -103,14 +111,23 @@ class RobomimicSim:
             print("Now starting renderer...")
             self.render_task = asyncio.create_task(self.render())
         return True
-    
+
     async def reset(self):
         self.env.reset()
         return True
 
-    async def rollout(self, policy, env, horizon, render=False, video_writer=None, video_skip=5, camera_names=None):
+    async def rollout(
+        self,
+        policy,
+        env,
+        horizon,
+        render=False,
+        video_writer=None,
+        video_skip=5,
+        camera_names=None,
+    ):
         """
-        Helper function to carry out rollouts. Supports on-screen rendering, off-screen rendering to a video, 
+        Helper function to carry out rollouts. Supports on-screen rendering, off-screen rendering to a video,
         and returns the rollout trajectory.
         Args:
             policy (instance of RolloutPolicy): policy loaded from a checkpoint
@@ -140,8 +157,8 @@ class RobomimicSim:
         obs = env.get_observation()
 
         video_count = 0  # video frame counter
-        total_reward = 0.
-        
+        total_reward = 0.0
+
         self.rollout_visualizing = True
         try:
             for step_i in range(horizon):
@@ -167,8 +184,17 @@ class RobomimicSim:
                     if video_count % video_skip == 0:
                         video_img = []
                         for cam_name in camera_names:
-                            video_img.append(env.render(mode="rgb_array", height=512, width=512, camera_name=cam_name))
-                        video_img = np.concatenate(video_img, axis=1) # concatenate horizontally
+                            video_img.append(
+                                env.render(
+                                    mode="rgb_array",
+                                    height=512,
+                                    width=512,
+                                    camera_name=cam_name,
+                                )
+                            )
+                        video_img = np.concatenate(
+                            video_img, axis=1
+                        )  # concatenate horizontally
                         video_writer.append_data(video_img)
                     video_count += 1
 
@@ -182,10 +208,12 @@ class RobomimicSim:
 
         except env.rollout_exceptions as e:
             print("WARNING: got rollout exception {}".format(e))
-        
+
         self.rollout_visualizing = False
 
-        stats = dict(Return=total_reward, Horizon=(step_i + 1), Success_Rate=float(success))
+        stats = dict(
+            Return=total_reward, Horizon=(step_i + 1), Success_Rate=float(success)
+        )
 
         return stats
 
@@ -200,21 +228,21 @@ class RobomimicSim:
         env = self.env
 
         stats = await self.rollout(
-            policy=policy, 
-            env=env, 
-            horizon=rollout_horizon, 
+            policy=policy,
+            env=env,
+            horizon=rollout_horizon,
             render=True,
-            # render=False, 
-            # video_writer=video_writer, 
-            # video_skip=5, 
-            camera_names=["frontview", "agentview"]
+            # render=False,
+            # video_writer=video_writer,
+            # video_skip=5,
+            camera_names=["frontview", "agentview"],
         )
         print(stats)
         video_writer.close()
-    
+
     def get_image(self):
-        img = self.env.render(mode="rgb_array", height=512, width=512, camera_name="frontview")
+        img = self.env.render(
+            mode="rgb_array", height=512, width=512, camera_name="frontview"
+        )
         img = Image.fromarray(img)
         return img
-
-

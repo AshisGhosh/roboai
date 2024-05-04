@@ -6,6 +6,7 @@ from roboai.agent import Agent
 from roboai.task import Task
 
 from dotenv import load_dotenv
+
 load_dotenv()  # take environment variables from .env.
 
 logging.basicConfig(level=logging.WARN)
@@ -15,20 +16,19 @@ log.setLevel(logging.DEBUG)
 
 # litellm.success_callback = ["langfuse"]
 
-# litellm.set_verbose=True 
-
+# litellm.set_verbose=True
 
 
 def test_task():
     planner_agent = Agent(
-                        name="Planner", 
-                        model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
-                        system_message="""You are a planner that breaks down tasks into steps for robots.
+        name="Planner",
+        model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
+        system_message="""You are a planner that breaks down tasks into steps for robots.
                             Create a set of steps that a robot with wheels and one arm can do.
-                            """
-                        )
+                            """,
+    )
     # task_handler = Agent(
-    #                     name="Task Handler", 
+    #                     name="Task Handler",
     #                     model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
     #                     system_message="""
     #                         You are a task handler that can handle tasks for robots.
@@ -41,9 +41,12 @@ def test_task():
 
 
 def test():
-    messages = [{ "content": "Hello, how are you?","role": "user"}]
-    response = completion(model="openrouter/huggingfaceh4/zephyr-7b-beta:free", messages=messages)
+    messages = [{"content": "Hello, how are you?", "role": "user"}]
+    response = completion(
+        model="openrouter/huggingfaceh4/zephyr-7b-beta:free", messages=messages
+    )
     print(response)
+
 
 def test_agent():
     agent = Agent(name="test", model="openrouter/huggingfaceh4/zephyr-7b-beta:free")
@@ -65,6 +68,7 @@ def test_agent():
     print(agent.get_last_response_obj())
     agent.clear_messages()
     print(agent.messages)
+
 
 if __name__ == "__main__":
     # test()

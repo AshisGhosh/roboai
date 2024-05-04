@@ -35,7 +35,9 @@ class SetNavigationGoal(Node):
         assert self.MAX_ITERATION_COUNT > 0
         self.curr_iteration_count = 1
 
-        self.__initial_goal_publisher = self.create_publisher(PoseWithCovarianceStamped, "/initialpose", 1)
+        self.__initial_goal_publisher = self.create_publisher(
+            PoseWithCovarianceStamped, "/initialpose", 1
+        )
 
         self.__initial_pose = self.get_parameter("initial_pose").value
         self.__is_initial_pose_sent = True if self.__initial_pose is None else False
@@ -143,7 +145,7 @@ class SetNavigationGoal(Node):
     def __get_result_callback(self, future):
         """
         Callback to check result.\n
-        It calls the send_goal() function in case current goal sent count < required goals count.     
+        It calls the send_goal() function in case current goal sent count < required goals count.
         """
         # Nav2 is sending empty message for success as well as for failure.
         result = future.result().result
@@ -176,9 +178,13 @@ class SetNavigationGoal(Node):
 
             yaml_file_path = self.get_parameter("map_yaml_path").value
             grid_map = GridMap(yaml_file_path)
-            obstacle_search_distance_in_meters = self.get_parameter("obstacle_search_distance_in_meters").value
+            obstacle_search_distance_in_meters = self.get_parameter(
+                "obstacle_search_distance_in_meters"
+            ).value
             assert obstacle_search_distance_in_meters > 0
-            goal_generator = RandomGoalGenerator(grid_map, obstacle_search_distance_in_meters)
+            goal_generator = RandomGoalGenerator(
+                grid_map, obstacle_search_distance_in_meters
+            )
 
         elif goal_generator_type == "GoalReader":
             if self.get_parameter("goal_text_file_path").value is None:

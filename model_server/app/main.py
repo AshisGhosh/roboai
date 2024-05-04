@@ -1,6 +1,6 @@
 #!/usr/bin/python -u
 import io
-import logging 
+import logging
 
 from PIL import Image
 
@@ -56,6 +56,7 @@ async def answer_question(file: UploadFile = File(...), question: str = ""):
     result = moondream.answer_question_from_image(image, question)
     # Return the result
     return JSONResponse(content={"result": result})
+
 
 @app.post("/embed")
 async def embed(text: str = ""):

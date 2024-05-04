@@ -18,7 +18,12 @@ import os
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, GroupAction, IncludeLaunchDescription, LogInfo
+from launch.actions import (
+    DeclareLaunchArgument,
+    GroupAction,
+    IncludeLaunchDescription,
+    LogInfo,
+)
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, TextSubstitution
@@ -32,7 +37,9 @@ def generate_launch_description():
     nav2_bringup_dir = get_package_share_directory("nav2_bringup")
     nav2_bringup_launch_dir = os.path.join(nav2_bringup_dir, "launch")
 
-    rviz_config_dir = os.path.join(carter_nav2_bringup_dir, "rviz2", "carter_navigation_namespaced.rviz")
+    rviz_config_dir = os.path.join(
+        carter_nav2_bringup_dir, "rviz2", "carter_navigation_namespaced.rviz"
+    )
 
     # Names and poses of the robots
     robots = [{"name": "carter1"}, {"name": "carter2"}, {"name": "carter3"}]
@@ -57,7 +64,10 @@ def generate_launch_description():
     declare_robot1_params_file_cmd = DeclareLaunchArgument(
         "carter1_params_file",
         default_value=os.path.join(
-            carter_nav2_bringup_dir, "params", "office", "multi_robot_carter_navigation_params_1.yaml"
+            carter_nav2_bringup_dir,
+            "params",
+            "office",
+            "multi_robot_carter_navigation_params_1.yaml",
         ),
         description="Full path to the ROS2 parameters file to use for robot1 launched nodes",
     )
@@ -65,7 +75,10 @@ def generate_launch_description():
     declare_robot2_params_file_cmd = DeclareLaunchArgument(
         "carter2_params_file",
         default_value=os.path.join(
-            carter_nav2_bringup_dir, "params", "office", "multi_robot_carter_navigation_params_2.yaml"
+            carter_nav2_bringup_dir,
+            "params",
+            "office",
+            "multi_robot_carter_navigation_params_2.yaml",
         ),
         description="Full path to the ROS2 parameters file to use for robot2 launched nodes",
     )
@@ -73,7 +86,10 @@ def generate_launch_description():
     declare_robot3_params_file_cmd = DeclareLaunchArgument(
         "carter3_params_file",
         default_value=os.path.join(
-            carter_nav2_bringup_dir, "params", "office", "multi_robot_carter_navigation_params_3.yaml"
+            carter_nav2_bringup_dir,
+            "params",
+            "office",
+            "multi_robot_carter_navigation_params_3.yaml",
         ),
         description="Full path to the ROS2 parameters file to use for robot3 launched nodes",
     )
@@ -81,20 +97,28 @@ def generate_launch_description():
     declare_bt_xml_cmd = DeclareLaunchArgument(
         "default_bt_xml_filename",
         default_value=os.path.join(
-            get_package_share_directory("nav2_bt_navigator"), "behavior_trees", "navigate_w_replanning_and_recovery.xml"
+            get_package_share_directory("nav2_bt_navigator"),
+            "behavior_trees",
+            "navigate_w_replanning_and_recovery.xml",
         ),
         description="Full path to the behavior tree xml file to use",
     )
 
     declare_autostart_cmd = DeclareLaunchArgument(
-        "autostart", default_value="True", description="Automatically startup the stacks"
+        "autostart",
+        default_value="True",
+        description="Automatically startup the stacks",
     )
 
     declare_rviz_config_file_cmd = DeclareLaunchArgument(
-        "rviz_config", default_value=rviz_config_dir, description="Full path to the RVIZ config file to use."
+        "rviz_config",
+        default_value=rviz_config_dir,
+        description="Full path to the RVIZ config file to use.",
     )
 
-    declare_use_rviz_cmd = DeclareLaunchArgument("use_rviz", default_value="True", description="Whether to start RVIZ")
+    declare_use_rviz_cmd = DeclareLaunchArgument(
+        "use_rviz", default_value="True", description="Whether to start RVIZ"
+    )
 
     # Define commands for launching the navigation instances
     nav_instances_cmds = []
@@ -104,7 +128,9 @@ def generate_launch_description():
         group = GroupAction(
             [
                 IncludeLaunchDescription(
-                    PythonLaunchDescriptionSource(os.path.join(nav2_bringup_launch_dir, "rviz_launch.py")),
+                    PythonLaunchDescriptionSource(
+                        os.path.join(nav2_bringup_launch_dir, "rviz_launch.py")
+                    ),
                     condition=IfCondition(use_rviz),
                     launch_arguments={
                         "namespace": TextSubstitution(text=robot["name"]),
@@ -114,7 +140,11 @@ def generate_launch_description():
                 ),
                 IncludeLaunchDescription(
                     PythonLaunchDescriptionSource(
-                        os.path.join(carter_nav2_bringup_dir, "launch", "carter_navigation_individual.launch.py")
+                        os.path.join(
+                            carter_nav2_bringup_dir,
+                            "launch",
+                            "carter_navigation_individual.launch.py",
+                        )
                     ),
                     launch_arguments={
                         "namespace": robot["name"],
@@ -129,41 +159,61 @@ def generate_launch_description():
                         "headless": "False",
                     }.items(),
                 ),
-                
                 Node(
-                    package='pointcloud_to_laserscan', executable='pointcloud_to_laserscan_node',
-                    remappings=[('cloud_in', ['front_3d_lidar/point_cloud']),
-                                ('scan', ['scan'])],
-                    parameters=[{
-                        'target_frame': 'front_3d_lidar',
-                        'transform_tolerance': 0.01,
-                        'min_height': -0.4,
-                        'max_height': 1.5,
-                        'angle_min': -1.5708,  # -M_PI/2
-                        'angle_max': 1.5708,  # M_PI/2
-                        'angle_increment': 0.0087,  # M_PI/360.0
-                        'scan_time': 0.3333,
-                        'range_min': 0.05,
-                        'range_max': 100.0,
-                        'use_inf': True,
-                        'inf_epsilon': 1.0,
-                        # 'concurrency_level': 1,
-                    }],
-                    name='pointcloud_to_laserscan',
-                    namespace = robot["name"]
+                    package="pointcloud_to_laserscan",
+                    executable="pointcloud_to_laserscan_node",
+                    remappings=[
+                        ("cloud_in", ["front_3d_lidar/point_cloud"]),
+                        ("scan", ["scan"]),
+                    ],
+                    parameters=[
+                        {
+                            "target_frame": "front_3d_lidar",
+                            "transform_tolerance": 0.01,
+                            "min_height": -0.4,
+                            "max_height": 1.5,
+                            "angle_min": -1.5708,  # -M_PI/2
+                            "angle_max": 1.5708,  # M_PI/2
+                            "angle_increment": 0.0087,  # M_PI/360.0
+                            "scan_time": 0.3333,
+                            "range_min": 0.05,
+                            "range_max": 100.0,
+                            "use_inf": True,
+                            "inf_epsilon": 1.0,
+                            # 'concurrency_level': 1,
+                        }
+                    ],
+                    name="pointcloud_to_laserscan",
+                    namespace=robot["name"],
                 ),
-
-                LogInfo(condition=IfCondition(log_settings), msg=["Launching ", robot["name"]]),
-                LogInfo(condition=IfCondition(log_settings), msg=[robot["name"], " map yaml: ", map_yaml_file]),
-                LogInfo(condition=IfCondition(log_settings), msg=[robot["name"], " params yaml: ", params_file]),
                 LogInfo(
                     condition=IfCondition(log_settings),
-                    msg=[robot["name"], " behavior tree xml: ", default_bt_xml_filename],
+                    msg=["Launching ", robot["name"]],
                 ),
                 LogInfo(
-                    condition=IfCondition(log_settings), msg=[robot["name"], " rviz config file: ", rviz_config_file]
+                    condition=IfCondition(log_settings),
+                    msg=[robot["name"], " map yaml: ", map_yaml_file],
                 ),
-                LogInfo(condition=IfCondition(log_settings), msg=[robot["name"], " autostart: ", autostart]),
+                LogInfo(
+                    condition=IfCondition(log_settings),
+                    msg=[robot["name"], " params yaml: ", params_file],
+                ),
+                LogInfo(
+                    condition=IfCondition(log_settings),
+                    msg=[
+                        robot["name"],
+                        " behavior tree xml: ",
+                        default_bt_xml_filename,
+                    ],
+                ),
+                LogInfo(
+                    condition=IfCondition(log_settings),
+                    msg=[robot["name"], " rviz config file: ", rviz_config_file],
+                ),
+                LogInfo(
+                    condition=IfCondition(log_settings),
+                    msg=[robot["name"], " autostart: ", autostart],
+                ),
             ]
         )
 
