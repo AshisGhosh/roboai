@@ -13,6 +13,7 @@ import pandas as pd
 from fastembed import TextEmbedding
 from dotenv import load_dotenv
 from html import escape
+from scipy.stats import kendalltau
 
 # Configure logging and environment
 logging.basicConfig(level=logging.INFO)
@@ -283,32 +284,30 @@ def calculate_count_accuracy(response_count, gt_count, response_len):
 
     return max(0, internal_consistency * count_score)
 
-def calculate_order_accuracy(sem_score_matches):
+def kendall_tau_normalized(sem_score_matches):
     """
-    Calculates pairwise ordering accuracy based on the relative positions of
-    semantically matched objects in the response compared to the ground truth.
+    Calculates normalized Kendall's tau correlation between the ground truth indices
+    and the response indices based on semantically matched objects.
     """
     matched_indices = [score["gt_name_index"] for score in sem_score_matches]
-
-    correct_pairs = 0
-    total_pairs = len(matched_indices) - 1
-
-    for i in range(total_pairs):
-        if matched_indices[i] <= matched_indices[i + 1]:
-            correct_pairs += 1
-
-    order_accuracy_score = correct_pairs / total_pairs if total_pairs > 0 else 1.0
+    response_indices = [score["response_idx"] for score in sem_score_matches]
+    
+    # Calculate Kendall's tau
+    tau, p_value = kendalltau(matched_indices, response_indices)
+    
+    # Normalize the Kendall's tau score to be in the range [0, 1]
+    normalized_tau = (tau + 1) / 2
 
     return {
-        "order_accuracy_score": order_accuracy_score,
+        "normalized_kendall_tau": normalized_tau,
+        "p_value": p_value,
         "matched_indices": matched_indices,
-        "correct_pairs": correct_pairs,
-        "total_pairs": total_pairs
+        "response_indices": response_indices
     }
 
 def evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_count):
     sem_score_matches, unpaired_responses, sem_score_match_stats, all_sem_scores, all_sem_score_stats = calculate_semantic_similarity(response_names, gt_names, embed_model)
-    order_accuracy_result = calculate_order_accuracy(sem_score_matches)
+    order_accuracy_result = kendall_tau_normalized(sem_score_matches)
     count_accuracy_score = calculate_count_accuracy(response_count, gt_count, len(response_names))
 
     # Weight factors
@@ -317,7 +316,7 @@ def evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_c
     weight_similarity = 0.7
 
     # Final score calculation
-    final_score = (weight_order * order_accuracy_result["order_accuracy_score"] +
+    final_score = (weight_order * order_accuracy_result["normalized_kendall_tau"] +
                    weight_count * count_accuracy_score +
                    weight_similarity * sem_score_match_stats["mean"])
 
@@ -340,7 +339,7 @@ def compute_aggregate_stats(scores):
     overall_performance_scores = []
 
     for filename, score_data in scores.items():
-        order_accuracy_scores.append(score_data["order_accuracy"]["order_accuracy_score"])
+        order_accuracy_scores.append(score_data["order_accuracy"]["normalized_kendall_tau"])
         average_semantic_scores.append(score_data["sem_score_match_stats"]["mean"])
         count_accuracy_scores.append(score_data["count_accuracy"])
         overall_performance_scores.append(score_data["final_score"])
@@ -499,7 +498,7 @@ def html_from_output_json(json_file_path, html_output_path):
                 'Final Score': score_data.get('final_score', ''),
                 'Matched Name Avg SemScore': score_data.get('sem_score_match_stats', {}).get('mean', ''),
                 'Count Accuracy': score_data.get('count_accuracy', ''),
-                'Pairwise Order Accuracy': score_data.get('order_accuracy', {}).get('order_accuracy_score', ''),
+                'Pairwise Order Accuracy': score_data.get('order_accuracy', {}).get('normalized_kendall_tau', ''),
                 'Matches & Unpaired Responses': per_file_matched_names_formatted,
                 'All SemScores': per_file_all_sem_scores_formatted,
                 'All SemScore Stats': per_file_all_sem_score_stats_formatted, 
