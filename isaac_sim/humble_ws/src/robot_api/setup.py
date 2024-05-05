@@ -21,7 +21,7 @@ setup(
     entry_points={
         "console_scripts": [
             "manipulation_example = robot_api.manipulation_example:main",
-            "manipulation_test = robot_api.manipulation_test:main",
+            "manipulation = robot_api.manipulation:main",
         ],
     },
 )

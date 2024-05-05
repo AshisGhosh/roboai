@@ -1,0 +1,11 @@
+# MoveArm.srv
+string configuration_goal
+float64[] cartesian_goal
+float64[] joint_goal
+float64[] constraints_goal
+float64[] start_state
+---
+string status
+string message
+
+---

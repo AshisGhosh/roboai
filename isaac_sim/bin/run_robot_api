@@ -1,2 +1,2 @@
-build_humble_ws robot_api
-ros2 run robot_api manipulation_example
+build_humble_ws roboai_interfaces robot_api 
+ros2 run robot_api manipulation

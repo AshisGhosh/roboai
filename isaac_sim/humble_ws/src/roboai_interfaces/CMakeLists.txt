@@ -11,10 +11,12 @@ find_package(ament_cmake REQUIRED)
 # further dependencies manually.
 
 find_package(rosidl_default_generators REQUIRED)
+find_package(action_msgs REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ObjectOrder.msg"
   "srv/SaveObjects.srv"
+  "action/MoveArm.action"
   DEPENDENCIES  # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
 )
 
