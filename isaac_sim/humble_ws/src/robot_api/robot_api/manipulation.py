@@ -2,17 +2,14 @@ import time
 
 # generic ros libraries
 import rclpy
-from rclpy.logging import get_logger
 
 # moveit python library
 from moveit.core.robot_state import RobotState
 from moveit.planning import (
     MoveItPy,
-    MultiPipelinePlanRequestParameters,
 )
 
 from rclpy.node import Node
-from rcl_interfaces.srv import GetParameters
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.msg import Constraints
 from rclpy.action import ActionServer
@@ -119,7 +116,7 @@ class ManipulationAPI(Node):
         start_time = time.time()
         plan_result = self.robot_arm_planning_component.plan()
         end_time = time.time()
-        self.get_logger().info(f"Planning completed")
+        self.get_logger().info("Planning completed")
         self.get_logger().info(f"Planning time: {end_time - start_time}")
 
         return plan_result

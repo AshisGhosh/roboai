@@ -6,7 +6,7 @@ from PIL import Image  # noqa: F401
 from roboai.agent import Agent
 from roboai.task import Task
 
-from shared.utils.robosim_client import (
+from shared.utils.robosim_client import ( # noqa: F401
     get_objects_on_table,
     pick,
     place,
