@@ -29,6 +29,7 @@ import hashlib
 import json
 import os
 import httpx
+import re
 from PIL import Image
 import argparse
 import trimesh
@@ -38,6 +39,8 @@ from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_t
 
 # Base path to the data directory containing STL files
 BASE_DATA_PATH = os.path.join(os.path.dirname(__file__), 'data')
+
+max_runs = 232
 
 # Dictionary mapping object names to STL filenames
 stl_files = {
@@ -52,6 +55,13 @@ meshes = {
     name: trimesh.load(os.path.join(BASE_DATA_PATH, filename))
     for name, filename in stl_files.items()
 }
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Run robot simulations to generate and optionally mirror images.")
+    parser.add_argument("-n", "--runs", type=int, default=50, help="Number of simulation runs. Max is 232 runs; will clamp to that if >232. (default: 50)")
+    parser.add_argument("-d", "--disable_mirror", action="store_true", help="Disable mirroring of images")
+    parser.add_argument("-a", "--append", type=str, help="Path to the directory for appending new simulations")
+    return parser.parse_args()
 
 def with_retry(func):
     return retry(
@@ -192,12 +202,6 @@ def get_metadata(sim_number):
         results.append(obj_data)
     return results
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Run robot simulations to generate and optionally mirror images.")
-    parser.add_argument("-n", "--runs", type=int, default=50, help="Number of simulation runs (default: 50)")
-    parser.add_argument("-d", "--disable_mirror", action="store_true", help="Disable mirroring of images")
-    return parser.parse_args()
-
 def format_timestamp(unix_time):
     """Converts UNIX timestamp to a human-readable format."""
     return datetime.datetime.fromtimestamp(unix_time).strftime("%Y-%m-%d %H:%M:%S")
@@ -207,59 +211,103 @@ def generate_unique_id(batch_start_time):
     unique_string = f"batch_{batch_start_time}"
     return hashlib.sha256(unique_string.encode()).hexdigest()
 
-def construct_json_output(run_info, num_simulations, disable_mirror, batch_start_time, batch_end_time):
-    """Construct the final JSON output containing all runs and batch information."""
-    batch_duration = batch_end_time - batch_start_time
-    batch_info = {
-        "uid": generate_unique_id(batch_start_time),
-        "runs": num_simulations,
-        "disable_mirror": disable_mirror,
-        "batch_start_time": format_timestamp(batch_start_time),
-        "batch_end_time": format_timestamp(batch_end_time),
-        "duration": batch_duration
-    }
-    return {
-        "batch_info": batch_info,
-        "runs": run_info
-    }
+def get_next_run_number(directory):
+    # Define a regular expression to match the numeric part of the filenames
+    pattern = re.compile(r'(\d+)\.png$')
+    
+    # Find all files matching the pattern and extract their numbers
+    existing_numbers = [
+        int(pattern.search(filename).group(1))
+        for filename in os.listdir(directory)
+        if pattern.search(filename)
+    ]
+
+    # Return the next run number, or 1 if no runs found
+    return max(existing_numbers, default=0) + 1
+
+def load_existing_metadata(directory):
+    # Use only the last part of the directory for the filename
+    folder_name = os.path.basename(directory)
+    metadata_file = os.path.join(directory, f"{folder_name}.json")
+    if os.path.exists(metadata_file):
+        with open(metadata_file, "r") as f:
+            return json.load(f)
+    return {"batch_info": [], "runs": []}  # Default to empty if not existing
+
+def save_metadata(directory, metadata):
+    # Use only the last part of the directory for the filename
+    folder_name = os.path.basename(directory)
+    metadata_file = os.path.join(directory, f"{folder_name}.json")
+    with open(metadata_file, "w") as f:
+        json.dump(metadata, f, indent=4)
+        
+def add_batch_info(metadata, uid, start_time, end_time, first_run, last_run, duration):
+    metadata["batch_info"].append({
+        "uid": uid,
+        "batch_start_time": start_time,
+        "batch_end_time": end_time,
+        "duration": duration,
+        "first_run": first_run,
+        "last_run": last_run
+    })
 
 def main():
     args = parse_arguments()
-    num_simulations = args.runs
+    num_simulations = min(args.runs, max_runs)
     disable_mirror = args.disable_mirror
-    base_folder, folder_name = create_base_folder()
 
-    batch_start_time = datetime.datetime.now().timestamp()  # Record batch start time using datetime
-    run_info = []  # List to store metadata for each run
+    if args.append:
+        base_folder = args.append
+        metadata = load_existing_metadata(base_folder)
+    else:
+        base_folder, folder_name = create_base_folder()
+        metadata = {"batch_info": [], "runs": []}
 
-    for sim_number in range(1, num_simulations + 1):
+    batch_start = get_next_run_number(base_folder)
+    batch_end = batch_start + num_simulations - 1
+
+    batch_start_time = datetime.datetime.now().timestamp()
+    run_info = []
+
+    for sim_number in range(batch_start, batch_end + 1):
         start_time = start_simulation(sim_number)
         if start_time:
-            image_filename = f"{sim_number:02}.png"
+            image_filename = f"{sim_number:04}.png"
             image_path = os.path.join(base_folder, image_filename)
             if get_image(sim_number, image_path):
                 if not disable_mirror:
                     flip_images(sim_number, base_folder, image_filename)
-                metadata = get_metadata(sim_number)
-                if metadata:
+                metadata_entry = get_metadata(sim_number)
+                if metadata_entry:
                     run_info.append({
                         "run": sim_number,
                         "image_file": image_filename,
-                        "objects": metadata
+                        "objects": metadata_entry
                     })
             time_taken = close_simulation(sim_number, start_time)
             if time_taken:
                 print(f"[Sim {sim_number}] Time taken for simulation: {time_taken:.2f} seconds")
 
-    batch_end_time = datetime.datetime.now().timestamp()  # Record batch end time using datetime
+    batch_end_time = datetime.datetime.now().timestamp()
+    duration = batch_end_time - batch_start_time
 
-    final_output = construct_json_output(run_info, num_simulations, disable_mirror, batch_start_time, batch_end_time)
+    add_batch_info(
+        metadata,
+        generate_unique_id(batch_start_time),
+        format_timestamp(batch_start_time),
+        format_timestamp(batch_end_time),
+        batch_start,
+        batch_end,
+        duration
+    )
 
-    # Save final_output to a JSON file in the batch folder
-    json_filename = os.path.join(base_folder, f"{folder_name}.json")
-    with open(json_filename, "w") as f:
-        json.dump(final_output, f, indent=4)
-    print(f"Run info saved to {json_filename}")
+    metadata["runs"].extend(run_info)
+    save_metadata(base_folder, metadata)
+
+    folder_name = os.path.basename(base_folder)
+    metadata_file_name = f"{folder_name}.json"
+    print(f"Metadata saved to {os.path.join(base_folder, metadata_file_name)}")
+
 
 if __name__ == "__main__":
     main()
