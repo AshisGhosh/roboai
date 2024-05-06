@@ -147,9 +147,19 @@ class TaskManager(Node):
             )
             self.update_grid()
 
-            ui.button("Add Task", on_click=self.add_task)
-            ui.button("Run Tasks", on_click=lambda: asyncio.create_task(self.run_tasks()))
-            ui.button("Abort Current Task", on_click=lambda: asyncio.create_task(self.abort_current_task()))
+            self.position_input = ui.input(
+                label="Enter position:", placeholder="extended, ready"
+            )
+
+            # ui.button("Add Task", on_click=lambda event: self.add_task_to_move_to_position("specific_position"))
+            ui.button("Add Task", on_click=self.add_task_click)
+            ui.button(
+                "Run Tasks", on_click=lambda: asyncio.create_task(self.run_tasks())
+            )
+            ui.button(
+                "Abort Current Task",
+                on_click=lambda: asyncio.create_task(self.abort_current_task()),
+            )
             ui.button("Clear Tasks", on_click=self.clear_tasks)
 
     def update_grid(self) -> None:
@@ -158,8 +168,17 @@ class TaskManager(Node):
         ] + [{"name": task.name, "status": task.status} for task in self.tasks]
 
         self.grid.options["rowData"] = task_dict
-        self.get_logger().info(f"{task_dict}")
+        self.get_logger().debug(f"{task_dict}")
         self.grid.update()
+
+    def add_task_click(self, event):
+        position = (
+            self.position_input.value
+        )  # Get the current value from the input field
+        self.add_task_to_move_to_position(position)
+
+    def add_task_to_move_to_position(self, position: str) -> None:
+        self.add_task(MoveArmTask(f"Move to {position}", position))
 
     def add_task(self, task: Task) -> None:
         task.logger = self.get_logger()
@@ -174,6 +193,7 @@ class TaskManager(Node):
 
     def clear_tasks(self) -> None:
         self.tasks.clear()
+        self.task_history.clear()
         self.update_grid()
         self.get_logger().info("Tasks cleared")
 

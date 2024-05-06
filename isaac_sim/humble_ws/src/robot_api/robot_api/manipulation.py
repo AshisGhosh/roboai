@@ -12,7 +12,7 @@ from moveit.planning import (
 from rclpy.node import Node
 from geometry_msgs.msg import PoseStamped
 from moveit_msgs.msg import Constraints
-from rclpy.action import ActionServer
+from rclpy.action import ActionServer, CancelResponse, GoalResponse
 from roboai_interfaces.action import MoveArm
 
 
@@ -35,10 +35,29 @@ class ManipulationAPI(Node):
             self,
             MoveArm,
             "move_arm",
-            self.execute_callback,
+            execute_callback=self.execute_callback,
+            goal_callback=self.goal_callback,
+            cancel_callback=self.cancel_callback,
         )
 
         self.get_logger().info("Manipulation API initialized")
+
+    def destroy(self):
+        self._action_server.destroy()
+        super().destroy_node()
+
+    def goal_callback(self, goal_request):
+        """Accept or reject a client request to begin an action."""
+        # This server allows multiple goals in parallel
+        self.get_logger().info("Received goal request")
+        return GoalResponse.ACCEPT
+
+    def cancel_callback(self, goal_handle):
+        """Accept or reject a client request to cancel an action."""
+        # TODO: Implement cancel
+        self.get_logger().info("Received cancel request")
+        self.get_logger().error("Cancel not implemented")
+        return CancelResponse.REJECT
 
     def execute_callback(self, goal_handle):
         goal = goal_handle.request
@@ -175,6 +194,7 @@ def main():
     rclpy.init()
     node = ManipulationAPI()
     rclpy.spin(node)
+    node.destroy()
     rclpy.shutdown()
 
 
