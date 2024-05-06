@@ -87,8 +87,9 @@ RUN echo "source ~/ws_moveit2/install/setup.bash" >> /root/.bashrc
 # TODO: debug why colcon build fails when git is installed (setuptools_scm issue)
 RUN apt-get remove git -y 
 
-
 WORKDIR /isaac-sim
+
+RUN ./python.sh -m pip install nicegui
 
 RUN echo "source /isaac-sim/setup_python_env.sh" >> /root/.bashrc
 ENV PYTHONPATH=/isaac-sim:/isaac-sim/roboai:$PYTHONPATH

@@ -1,6 +1,10 @@
 from enum import Enum
 from collections import deque
 from uuid import uuid4
+import threading
+import asyncio
+from pathlib import Path
+from nicegui import Client, app, ui, ui_run
 
 # generic ros libraries
 import rclpy
@@ -21,7 +25,7 @@ class TaskStatus(Enum):
 
 
 class Task:
-    def __init__(self, name, logger=None):
+    def __init__(self, name, logger=None) -> None:
         self.name = name
         self.status = TaskStatus.PENDING
         self.uuid = uuid4()
@@ -29,50 +33,50 @@ class Task:
         self.result = None
         self.log(f"TASK ({self.uuid}): {self.name} created; Status: {self.status}")
 
-    def run(self):
+    def run(self) -> None:
         pass
 
-    def abort(self):
+    def abort(self) -> None:
         self.status = TaskStatus.ABORTED
 
-    def update_status(self, status):
+    def update_status(self, status) -> None:
         self.status = status
         self.log(f"TASK ({self.uuid}): {self.name} updated to: {status}")
 
-    def log(self, message):
+    def log(self, message) -> None:
         if self.logger:
             self.logger.info(message)
         else:
             print(message)
 
-    def __str__(self):
+    def __str__(self) -> str:
         return f"{self.name}; Status: {self.status}"
 
 
 class MoveArmTask(Task):
-    def __init__(self, name, goal: str | list[float], logger=None):
+    def __init__(self, name, goal: str | list[float], logger=None) -> None:
         super().__init__(name, logger)
         self.goal = goal
         self._action_client = None
         self.goal_handle = None
 
-    def run(self, action_client: ActionClient):
+    def run(self, action_client: ActionClient) -> None:
         self._action_client = action_client
         self.log(f"Moving arm to goal: {self.goal}")
-        self.status = TaskStatus.RUNNING
+        self.update_status(TaskStatus.RUNNING)
         try:
             self.send_goal()
         except Exception as e:
             self.log(f"Error while sending goal: {e}")
             self.update_status(TaskStatus.FAILURE)
 
-    def abort(self):
+    def abort(self) -> None:
         if self.goal_handle:
             self.goal_handle.cancel_goal()
-        # self._action_client.cancel_goal()
+            self._action_client._cancel_goal(self.goal_handle)
         super().abort()
 
-    def send_goal(self):
+    def send_goal(self) -> None:
         goal_msg = MoveArm.Goal()
         if isinstance(self.goal, str):
             goal_msg.configuration_goal = self.goal
@@ -90,7 +94,7 @@ class MoveArmTask(Task):
         future = self._action_client.send_goal_async(goal_msg)
         future.add_done_callback(self.goal_response_callback)
 
-    def goal_response_callback(self, future):
+    def goal_response_callback(self, future) -> None:
         self.goal_handle = future.result()
         if not self.goal_handle.accepted:
             self.log("Goal rejected :(")
@@ -102,7 +106,7 @@ class MoveArmTask(Task):
         result_future = self.goal_handle.get_result_async()
         result_future.add_done_callback(self.get_result_callback)
 
-    def get_result_callback(self, future):
+    def get_result_callback(self, future) -> None:
         self.result = future.result().result
         print(f"Result received: {self.result}, {type(self.result.status)}")
         if self.result.status == "SUCCEEDED":
@@ -114,64 +118,114 @@ class MoveArmTask(Task):
 
 
 class TaskManager(Node):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("task_manager")
         self.tasks = deque()
         self.current_task = None
+        self.task_history = []
         self.move_arm_action_client = ActionClient(self, MoveArm, "/move_arm")
+        self.setup_gui()
 
         self.get_logger().info("Task Manager initialized")
 
-        # self.task_thread = Thread(target=self.run_tasks)
-        # self.task_thread.start()
-
-    def add_task(self, task):
-        task.logger = self.get_logger()
-        self.tasks.append(task)
-        self.get_logger().info(f"Task added: {task}")
-
-    def remove_task(self, task):
-        self.tasks.remove(task)
-        self.get_logger().info(f"Task removed: {task}")
-
-    def clear_tasks(self):
-        self.tasks.clear()
-        self.get_logger().info("Tasks cleared")
-
-    def run_tasks(self):
         self.add_task(MoveArmTask("Move to extended", "extended"))
         self.add_task(MoveArmTask("Move to ready", "ready"))
+
+    def setup_gui(self) -> None:
+        with Client.auto_index_client:
+            ui.label("Task Manager").style("font-size: 24px")
+            self.grid = ui.aggrid(
+                {
+                    "domLayout": "autoHeight",
+                    "defaultColDef": {"flex": 1},
+                    "columnDefs": [
+                        {"headerName": "Name", "field": "name", "sortable": True},
+                        {"headerName": "Status", "field": "status", "sortable": True},
+                    ],
+                    "rowData": [],
+                }
+            )
+            self.update_grid()
+
+            ui.button("Add Task", on_click=self.add_task)
+            ui.button("Run Tasks", on_click=lambda: asyncio.create_task(self.run_tasks()))
+            ui.button("Abort Current Task", on_click=lambda: asyncio.create_task(self.abort_current_task()))
+            ui.button("Clear Tasks", on_click=self.clear_tasks)
+
+    def update_grid(self) -> None:
+        task_dict = [
+            {"name": task.name, "status": task.status} for task in self.task_history
+        ] + [{"name": task.name, "status": task.status} for task in self.tasks]
+
+        self.grid.options["rowData"] = task_dict
+        self.get_logger().info(f"{task_dict}")
+        self.grid.update()
+
+    def add_task(self, task: Task) -> None:
+        task.logger = self.get_logger()
+        self.tasks.append(task)
+        self.update_grid()
+        self.get_logger().info(f"Task added: {task}")
+
+    def remove_task(self, task: Task) -> None:
+        self.tasks.remove(task)
+        self.update_grid()
+        self.get_logger().info(f"Task removed: {task}")
+
+    def clear_tasks(self) -> None:
+        self.tasks.clear()
+        self.update_grid()
+        self.get_logger().info("Tasks cleared")
+
+    async def run_tasks(self) -> None:
         while self.tasks:
-            self.current_task = self.tasks.popleft()
+            self.set_current_task(self.tasks.popleft())
 
             if isinstance(self.current_task, MoveArmTask):
                 self.current_task.run(self.move_arm_action_client)
             else:
                 self.current_task.run()
 
+            self.update_grid()
+
             while self.current_task.status == TaskStatus.RUNNING:
-                rclpy.spin_once(self, timeout_sec=0.1)
+                await asyncio.sleep(0.1)
                 if self.current_task.status == TaskStatus.ABORTED:
                     break
 
-        self.current_task = None
+        self.set_current_task(None)
         self.get_logger().info("All tasks completed")
 
-    def abort_current_task(self):
+    def set_current_task(self, task: Task | None) -> None:
+        self.current_task = task
+        if task:
+            self.task_history.append(task)
+            self.get_logger().info(f"Current task: {task}")
+        self.update_grid()
+
+    async def abort_current_task(self) -> None:
         if self.current_task:
             self.current_task.abort()
+            self.get_logger().info(f"Current task aborted: {self.current_task}")
+        else:
+            self.get_logger().info("No current task to abort")
 
-    def get_tasks(self):
+    def get_tasks(self) -> deque[Task]:
         return self.tasks
 
-    def destroy_node(self):
+    def destroy_node(self) -> None:
         self.move_arm_action_client.destroy()
         self.abort_current_task()
-        self.task_thread.join()
         super().destroy_node()
 
 
-def main():
+def main() -> None:
+    # NOTE: This function is defined as the ROS entry point in setup.py, but it's empty to enable NiceGUI auto-reloading
+    # https://github.com/zauberzeug/nicegui/blob/main/examples/ros2/ros2_ws/src/gui/gui/node.py
+    pass
+
+
+def ros_main() -> None:
     rclpy.init()
     task_manager = TaskManager()
     executor = MultiThreadedExecutor()
@@ -183,5 +237,6 @@ def main():
         rclpy.shutdown()
 
 
-if __name__ == "__main__":
-    main()
+app.on_startup(lambda: threading.Thread(target=ros_main).start())
+ui_run.APP_IMPORT_STRING = f"{__name__}:app"  # ROS2 uses a non-standard module name, so we need to specify it here
+ui.run(uvicorn_reload_dirs=str(Path(__file__).parent.resolve()), favicon="🤖")
