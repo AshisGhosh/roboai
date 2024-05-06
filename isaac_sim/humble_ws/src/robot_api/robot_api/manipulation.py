@@ -32,14 +32,14 @@ class ManipulationAPI(Node):
         )
 
         self._action_server = ActionServer(
-            self, 
+            self,
             MoveArm,
             "move_arm",
             self.execute_callback,
         )
 
         self.get_logger().info("Manipulation API initialized")
-    
+
     def execute_callback(self, goal_handle):
         goal = goal_handle.request
         self.get_logger().info(f"Received goal: {goal}")
@@ -54,7 +54,7 @@ class ManipulationAPI(Node):
         self.get_logger().info(f"Move arm status: {status.status}")
         result.status = status.status
         goal_handle.succeed()
-        return result   
+        return result
 
     def _get_moveit_config(self):
         from moveit_configs_utils import MoveItConfigsBuilder
@@ -81,8 +81,10 @@ class ManipulationAPI(Node):
         start_state=None,
     ):
         self.get_logger().info("Planning trajectory")
-        self.get_logger().info(f"Goal state: {goal_state} type {type(goal_state)}: {isinstance(goal_state, str)}")
-        
+        self.get_logger().info(
+            f"Goal state: {goal_state} type {type(goal_state)}: {isinstance(goal_state, str)}"
+        )
+
         if start_state is None:
             self.robot_arm_planning_component.set_start_state_to_current_state()
         else:

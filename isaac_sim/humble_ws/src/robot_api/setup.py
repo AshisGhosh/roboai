@@ -22,6 +22,7 @@ setup(
         "console_scripts": [
             "manipulation_example = robot_api.manipulation_example:main",
             "manipulation = robot_api.manipulation:main",
+            "task_manager = robot_api.task_manager:main",
         ],
     },
 )
