@@ -357,6 +357,15 @@ class SimManager:
                             "ArticulationController",
                             "omni.isaac.core_nodes.IsaacArticulationController",
                         ),
+                        # Hand Controller Nodes
+                        (
+                            "SubscribeJointStateHand",
+                            "omni.isaac.ros2_bridge.ROS2SubscribeJointState",
+                        ),
+                        (
+                            "ArticulationControllerHand",
+                            "omni.isaac.core_nodes.IsaacArticulationController",
+                        ),
                         ("PublishClock", "omni.isaac.ros2_bridge.ROS2PublishClock"),
                         ("OnTick", "omni.graph.action.OnTick"),
                         # Realsense Camera Helper
@@ -455,6 +464,35 @@ class SimManager:
                         (
                             "SubscribeJointState.outputs:effortCommand",
                             "ArticulationController.inputs:effortCommand",
+                        ),
+                        # Hand Controller Connects
+                        (
+                            "OnImpulseEvent.outputs:execOut",
+                            "SubscribeJointStateHand.inputs:execIn",
+                        ),
+                        (
+                            "OnImpulseEvent.outputs:execOut",
+                            "ArticulationControllerHand.inputs:execIn",
+                        ),
+                        (
+                            "Context.outputs:context",
+                            "SubscribeJointStateHand.inputs:context",
+                        ),
+                        (
+                            "SubscribeJointStateHand.outputs:jointNames",
+                            "ArticulationControllerHand.inputs:jointNames",
+                        ),
+                        (
+                            "SubscribeJointStateHand.outputs:positionCommand",
+                            "ArticulationControllerHand.inputs:positionCommand",
+                        ),
+                        (
+                            "SubscribeJointStateHand.outputs:velocityCommand",
+                            "ArticulationControllerHand.inputs:velocityCommand",
+                        ),
+                        (
+                            "SubscribeJointStateHand.outputs:effortCommand",
+                            "ArticulationControllerHand.inputs:effortCommand",
                         ),
                         # Realsense Camera Key Connects
                         ("OnTick.outputs:tick", "createViewport.inputs:execIn"),
@@ -580,6 +618,16 @@ class SimManager:
                         (
                             "SubscribeJointState.inputs:topicName",
                             "isaac_joint_commands",
+                        ),
+                        # Hand Controller Set Values
+                        ("ArticulationControllerHand.inputs:usePath", True),
+                        (
+                            "ArticulationControllerHand.inputs:robotPath",
+                            FRANKA_STAGE_PATH,
+                        ),
+                        (
+                            "SubscribeJointStateHand.inputs:topicName",
+                            "isaac_hand_joint_commands",
                         ),
                         # Realsense Camera Key Values
                         ("createViewport.inputs:name", REALSENSE_VIEWPORT_NAME),

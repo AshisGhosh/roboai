@@ -17,6 +17,7 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/ObjectOrder.msg"
   "srv/SaveObjects.srv"
   "action/MoveArm.action"
+  "action/ControlGripper.action"
   DEPENDENCIES  # Add packages that above messages depend on, in this case geometry_msgs for Sphere.msg
 )
 

@@ -1,0 +1,8 @@
+string OPEN="open"
+string CLOSE="close"
+string goal_state
+---
+string status
+string message
+
+---

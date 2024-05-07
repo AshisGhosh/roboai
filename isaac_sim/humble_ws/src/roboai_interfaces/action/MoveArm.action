@@ -1,4 +1,3 @@
-# MoveArm.srv
 string configuration_goal
 float64[] cartesian_goal
 float64[] joint_goal

@@ -39,9 +39,12 @@ ENV NVIDIA_REQUIRE_CUDA "cuda>=${CUDA_MAJOR_VERSION}.${CUDA_MINOR_VERSION}"
 
 COPY ./isaac_demo.launch.py /root/ws_moveit/src/moveit2_tutorials/doc/how_to_guides/isaac_panda/launch/isaac_demo.launch.py
 COPY ./config/panda_moveit_config.rviz /root/ws_moveit/src/moveit2_tutorials/doc/how_to_guides/isaac_panda/config/panda_moveit_config.rviz
+COPY ./moveit_resources_panda/panda_hand.ros2_control.xacro /root/ws_moveit/src/moveit_resources/panda_moveit_config/config/panda_hand.ros2_control.xacro
+COPY ./moveit_resources_panda/panda_hand.ros2_control.xacro /root/ws_moveit/install/moveit_resources_panda_moveit_config/share/moveit_resources_panda_moveit_config/config/panda_hand.ros2_control.xacro
 RUN source /opt/ros/humble/setup.bash && \
                         cd /root/ws_moveit \
-                        && colcon build --packages-select moveit2_tutorials
+                        && colcon build --packages-select moveit2_tutorials 
+
 
 # Set up the entrypoint for both container start and interactive terminals.
 COPY ./ros_entrypoint.sh /opt/.ros/

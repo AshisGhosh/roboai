@@ -2,12 +2,6 @@ FROM nvcr.io/nvidia/isaac-sim:2023.1.1
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN ./python.sh -m pip install \
-        fastapi \
-        uvicorn \
-        python-multipart
-
-
 # Patch omniverse
 COPY ./isaac_sim/omniverse_patch/nucleus.py /isaac-sim/exts/omni.isaac.core/omni/isaac/core/utils/nucleus.py
 
