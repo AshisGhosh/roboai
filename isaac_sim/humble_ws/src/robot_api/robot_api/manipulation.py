@@ -1,21 +1,62 @@
 import time
+from typing import List
+from dataclasses import dataclass
 
 # generic ros libraries
 import rclpy
 
 # moveit python library
 from moveit.core.robot_state import RobotState
-from moveit.core.robot_trajectory import RobotTrajectory
 from moveit.planning import (
     MoveItPy,
+    PlanRequestParameters,
 )
 
 from rclpy.node import Node
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Pose
 from moveit_msgs.msg import Constraints
 from rclpy.action import ActionServer, CancelResponse, GoalResponse, ActionClient
 from control_msgs.action import GripperCommand
 from roboai_interfaces.action import MoveArm, ControlGripper
+
+
+@dataclass
+class ArmState:
+    JOINT_VALUES = "joint_values"
+    POSE = "pose"
+    name: str
+    type: str
+    joint_values: List[float | int] | None = None
+    pose: List[float | int] | None = None
+
+    def __post_init__(self):
+        if self.joint_values is not None and self.pose is not None:
+            raise ValueError("Only one of joint_values or pose can be set")
+        if self.joint_values is None and self.pose is None:
+            raise ValueError("Either joint_values or pose must be set")
+
+    @classmethod
+    def get_pose_as_pose(self, pose_array: List[float | int]) -> Pose:
+        pose = Pose()
+        pose.position.x = pose_array[0]
+        pose.position.y = pose_array[1]
+        pose.position.z = pose_array[2]
+        pose.orientation.x = pose_array[3]
+        pose.orientation.y = pose_array[4]
+        pose.orientation.z = pose_array[5]
+        pose.orientation.w = pose_array[6]
+        return pose
+
+
+# Arm states
+LOOK_DOWN_QUAT = [0.924, -0.383, 0.0, 0.0]
+PICK_CENTER = ArmState(
+    name="pick_center", type=ArmState.POSE, pose=[0.5, 0.0, 0.5, *LOOK_DOWN_QUAT]
+)
+DROP = ArmState(name="drop", type=ArmState.POSE, pose=[0.5, -0.5, 0.5, *LOOK_DOWN_QUAT])
+ARM_STATE_LIST = [PICK_CENTER, DROP]
+
+ARM_STATES = {state.name: state for state in ARM_STATE_LIST}
 
 
 class ManipulationAPI(Node):
@@ -23,21 +64,16 @@ class ManipulationAPI(Node):
         self,
         robot_arm_planning_component="panda_arm",
         robot_arm_eef_link="panda_link8",
-        gripper_planning_component="hand",
     ):
         super().__init__("manipulation_api")
         moveit_config = self._get_moveit_config()
 
         self.robot_arm_planning_component_name = robot_arm_planning_component
         self.robot_arm_eef_link = robot_arm_eef_link
-        self.gripper_planning_component_name = gripper_planning_component
 
         self.robot = MoveItPy(node_name="moveit_py", config_dict=moveit_config)
         self.robot_arm_planning_component = self.robot.get_planning_component(
             self.robot_arm_planning_component_name
-        )
-        self.gripper_planning_component = self.robot.get_planning_component(
-            self.gripper_planning_component_name
         )
 
         self._action_server = ActionServer(
@@ -146,6 +182,7 @@ class ManipulationAPI(Node):
         self.get_logger().info(
             f"Goal state: {goal_state} type {type(goal_state)}: {isinstance(goal_state, str)}"
         )
+        plan_request_parameters = None
 
         if start_state is None:
             self.robot_arm_planning_component.set_start_state_to_current_state()
@@ -163,6 +200,15 @@ class ManipulationAPI(Node):
             self.robot_arm_planning_component.set_goal_state(
                 pose_stamped_msg=goal_state, pose_link=self.robot_arm_eef_link
             )
+            plan_request_parameters = PlanRequestParameters(
+                self.robot, "pilz_industrial_motion_planner"
+            )
+            plan_request_parameters.planning_time = 1.0
+            plan_request_parameters.planning_attempts = 1
+            plan_request_parameters.max_velocity_scaling_factor = 0.1
+            plan_request_parameters.max_acceleration_scaling_factor = 0.1
+            plan_request_parameters.planning_pipeline = "pilz_industrial_motion_planner"
+            plan_request_parameters.planner_id = "PTP"
         elif isinstance(goal_state, Constraints):
             self.robot_arm_planning_component.set_goal_state(
                 motion_plan_constraints=[goal_state]
@@ -178,7 +224,12 @@ class ManipulationAPI(Node):
             f"Planning trajectory for goal of type {type(goal_state)}"
         )
         start_time = time.time()
-        plan_result = self.robot_arm_planning_component.plan()
+        if plan_request_parameters is not None:
+            plan_result = self.robot_arm_planning_component.plan(
+                single_plan_parameters=plan_request_parameters
+            )
+        else:
+            plan_result = self.robot_arm_planning_component.plan()
         end_time = time.time()
         self.get_logger().info("Planning completed")
         self.get_logger().info(f"Planning time: {end_time - start_time}")
@@ -206,15 +257,21 @@ class ManipulationAPI(Node):
         if start_state is not None:
             raise NotImplementedError("Custom start state not implemented")
 
-        if configuration_goal is not None:
-            goal_state = configuration_goal
+        if configuration_goal not in [None, ""]:
+            if configuration_goal in ["extended", "ready"]:
+                goal_state = configuration_goal
+            elif configuration_goal in ARM_STATES:
+                goal_state = ARM_STATES[configuration_goal]
+                if goal_state.type == ArmState.JOINT_VALUES:
+                    return self.move_arm(joint_goal=goal_state.joint_values)
+                elif goal_state.type == ArmState.POSE:
+                    return self.move_arm(cartesian_goal=goal_state.pose)
+            else:
+                raise ValueError("Invalid configuration goal")
         elif cartesian_goal is not None:
             pose_stamped = PoseStamped()
             pose_stamped.header.frame_id = "panda_link0"
-            pose_stamped.pose.orientation.w = 1.0
-            pose_stamped.pose.position.x = cartesian_goal[0]
-            pose_stamped.pose.position.y = cartesian_goal[1]
-            pose_stamped.pose.position.z = cartesian_goal[2]
+            pose_stamped.pose = ArmState.get_pose_as_pose(cartesian_goal)
             goal_state = pose_stamped
         elif joint_goal is not None:
             robot_model = self.robot.get_robot_model()
@@ -262,17 +319,11 @@ class ManipulationAPI(Node):
             self.get_logger().error("Gripper command failed.")
         self._last_gripper_result = result
 
-    def gripper_plan(self, goal_state: str) -> RobotTrajectory:
-        self.gripper_planning_component.set_goal_state(configuration_name=goal_state)
-        start_time = time.time()
-        plan_result = self.gripper_planning_component.plan()
-        end_time = time.time()
-        self.get_logger().info("Planning completed")
-        self.get_logger().info(f"Planning time: {end_time - start_time}")
-        return plan_result
-
     def control_gripper(self, goal: str):
         self._last_gripper_result = None
+        if goal not in ["open", "close"]:
+            raise ValueError("Invalid gripper goal")
+
         self.get_logger().info(f"Control gripper to {goal}")
         self.gripper_send_goal(goal)
         while self._last_gripper_result is None:

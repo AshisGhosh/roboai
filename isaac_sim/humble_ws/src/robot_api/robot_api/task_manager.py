@@ -127,9 +127,11 @@ class MoveArmTask(ActionClientTask):
             elif len(self.goal) == 7:
                 goal_msg.cartesian_goal = self.goal
             else:
-                raise ValueError(f"Invalid goal: {self.goal}")
+                raise ValueError(
+                    f"Invalid goal length: {self.goal}, length: {len(self.goal)}"
+                )
         else:
-            raise ValueError(f"Invalid goal: {self.goal}")
+            raise ValueError(f"Invalid goal: {self.goal}, type: {type(self.goal)}")
 
         return goal_msg
 
@@ -208,17 +210,37 @@ class TaskManager(Node):
             )
             self.update_grid()
 
+            arm_positions = ["extended", "ready", "pick_center", "drop"]
             self.position_input = ui.input(
-                label="Enter Move Arm position:", placeholder="extended, ready"
+                label="Enter Move Arm position:",
+                placeholder=f"{', '.join(arm_positions)}",
+                autocomplete=arm_positions,
             )
-            ui.button("Add Move Arm Task", on_click=self.add_move_arm_task_click)
+            ui.button(
+                "Add Move Arm Task (Configuration)",
+                on_click=self.add_move_arm_task_click,
+            )
 
+            gripper_positions = ["open", "close"]
             self.gripper_position_input = ui.input(
-                label="Enter Control Gripper position:", placeholder="open, close"
+                label="Enter Control Gripper position:",
+                placeholder=f"{', '.join(gripper_positions)}",
+                autocomplete=gripper_positions,
             )
             ui.button(
                 "Add Control Gripper Task", on_click=self.add_control_gripper_task_click
             )
+
+            self.numerical_list_input = ui.input(
+                label="Enter cartesian position as list of 7 numbers separated by commas:",
+                placeholder="x, y, z, qx, qy, qz, qw",
+            )
+            ui.button(
+                "Add Move Arm Task (Cartesian)",
+                on_click=self.add_move_arm_task_cartesian_click,
+            )
+
+            ui.button("Add Pick Tasks", on_click=self.add_pick_tasks_click)
 
             ui.button(
                 "Run Tasks", on_click=lambda: asyncio.create_task(self.run_tasks())
@@ -265,6 +287,33 @@ class TaskManager(Node):
                 action_client=self.control_gripper_action_client,
             )
         )
+
+    def add_move_arm_task_cartesian_click(self, event):
+        position = [float(x) for x in self.numerical_list_input.value.split(",")]
+        self.add_task_to_move_to_cartesian(position)
+
+    def add_task_to_move_to_cartesian(self, position: list[float]) -> None:
+        self.add_task(
+            MoveArmTask(
+                name=f"Move to cartesian: {position}",
+                goal=position,
+                action_client=self.move_arm_action_client,
+            )
+        )
+
+    def add_pick_tasks_click(self, event):
+        position = [0.5, 0.1, 0.3, 0.924, -0.383, 0.0, 0.0]
+        self.add_pick_tasks(position)
+
+    def add_pick_tasks(self, grasp_pose: list[float]) -> None:
+        pre_grasp = grasp_pose.copy()
+        pre_grasp[2] += 0.1
+        self.add_task_to_move_to_cartesian(pre_grasp)
+        self.add_task_to_control_gripper("open")
+        self.add_task_to_move_to_cartesian(grasp_pose)
+        self.add_task_to_control_gripper("close")
+        self.add_task_to_move_to_cartesian(pre_grasp)
+        self.add_task_to_move_to_position("ready")
 
     def add_task(self, task: Task) -> None:
         task.logger = self.get_logger()
