@@ -5,6 +5,7 @@ import threading
 import asyncio
 from pathlib import Path
 from nicegui import Client, app, ui, ui_run
+from abc import ABC, abstractmethod
 
 # generic ros libraries
 import rclpy
@@ -12,7 +13,7 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
 
-from roboai_interfaces.action import MoveArm
+from roboai_interfaces.action import MoveArm, ControlGripper
 
 
 class TaskStatus(Enum):
@@ -24,7 +25,7 @@ class TaskStatus(Enum):
     PAUSED = "PAUSED"
 
 
-class Task:
+class Task(ABC):
     def __init__(self, name, logger=None) -> None:
         self.name = name
         self.status = TaskStatus.PENDING
@@ -33,6 +34,7 @@ class Task:
         self.result = None
         self.log(f"TASK ({self.uuid}): {self.name} created; Status: {self.status}")
 
+    @abstractmethod
     def run(self) -> None:
         pass
 
@@ -53,16 +55,15 @@ class Task:
         return f"{self.name}; Status: {self.status}"
 
 
-class MoveArmTask(Task):
-    def __init__(self, name, goal: str | list[float], logger=None) -> None:
+class ActionClientTask(Task):
+    def __init__(self, name, action_client, action_type, logger=None) -> None:
         super().__init__(name, logger)
-        self.goal = goal
-        self._action_client = None
+        self._action_client = action_client
+        self.action_type = action_type
         self.goal_handle = None
 
-    def run(self, action_client: ActionClient) -> None:
-        self._action_client = action_client
-        self.log(f"Moving arm to goal: {self.goal}")
+    def run(self) -> None:
+        self.log(f"Sending goal to action server: {self.action_type}")
         self.update_status(TaskStatus.RUNNING)
         try:
             self.send_goal()
@@ -70,26 +71,12 @@ class MoveArmTask(Task):
             self.log(f"Error while sending goal: {e}")
             self.update_status(TaskStatus.FAILURE)
 
-    def abort(self) -> None:
-        if self.goal_handle:
-            self.goal_handle.cancel_goal()
-            self._action_client._cancel_goal(self.goal_handle)
-        super().abort()
+    @abstractmethod
+    def create_goal_msg(self) -> None:
+        pass
 
     def send_goal(self) -> None:
-        goal_msg = MoveArm.Goal()
-        if isinstance(self.goal, str):
-            goal_msg.configuration_goal = self.goal
-        elif isinstance(self.goal, list):
-            if len(self.goal) == 6:
-                goal_msg.joint_goal = self.goal
-            elif len(self.goal) == 7:
-                goal_msg.cartesian_goal = self.goal
-            else:
-                raise ValueError(f"Invalid goal: {self.goal}")
-        else:
-            raise ValueError(f"Invalid goal: {self.goal}")
-
+        goal_msg = self.create_goal_msg()
         self._action_client.wait_for_server(timeout_sec=1)
         future = self._action_client.send_goal_async(goal_msg)
         future.add_done_callback(self.goal_response_callback)
@@ -116,6 +103,51 @@ class MoveArmTask(Task):
             self.log(f"Action did not succeed with status: {self.result.status}")
             self.update_status(TaskStatus.FAILURE)
 
+    def abort(self) -> None:
+        if self.goal_handle:
+            self.goal_handle.cancel_goal()
+            self._action_client._cancel_goal(self.goal_handle)
+        super().abort()
+
+
+class MoveArmTask(ActionClientTask):
+    def __init__(
+        self, name, goal: str | list[float], action_client, logger=None
+    ) -> None:
+        super().__init__(name, action_client, MoveArm, logger=None)
+        self.goal = goal
+
+    def create_goal_msg(self) -> None:
+        goal_msg = MoveArm.Goal()
+        if isinstance(self.goal, str):
+            goal_msg.configuration_goal = self.goal
+        elif isinstance(self.goal, list):
+            if len(self.goal) == 6:
+                goal_msg.joint_goal = self.goal
+            elif len(self.goal) == 7:
+                goal_msg.cartesian_goal = self.goal
+            else:
+                raise ValueError(f"Invalid goal: {self.goal}")
+        else:
+            raise ValueError(f"Invalid goal: {self.goal}")
+
+        return goal_msg
+
+
+class ControlGripperTask(ActionClientTask):
+    def __init__(self, name, goal: str, action_client, logger=None) -> None:
+        super().__init__(name, action_client, ControlGripper, logger=None)
+        self.goal = goal
+
+    def create_goal_msg(self) -> None:
+        goal_msg = ControlGripper.Goal()
+        if isinstance(self.goal, str):
+            goal_msg.goal_state = self.goal
+        else:
+            raise ValueError(f"Invalid goal: {self.goal}")
+
+        return goal_msg
+
 
 class TaskManager(Node):
     def __init__(self) -> None:
@@ -124,12 +156,41 @@ class TaskManager(Node):
         self.current_task = None
         self.task_history = []
         self.move_arm_action_client = ActionClient(self, MoveArm, "/move_arm")
+        self.control_gripper_action_client = ActionClient(
+            self, ControlGripper, "/control_gripper"
+        )
         self.setup_gui()
 
         self.get_logger().info("Task Manager initialized")
 
-        self.add_task(MoveArmTask("Move to extended", "extended"))
-        self.add_task(MoveArmTask("Move to ready", "ready"))
+        self.add_task(
+            MoveArmTask(
+                name="Move to extended",
+                goal="extended",
+                action_client=self.move_arm_action_client,
+            )
+        )
+        self.add_task(
+            ControlGripperTask(
+                name="Open gripper",
+                goal="open",
+                action_client=self.control_gripper_action_client,
+            )
+        )
+        self.add_task(
+            MoveArmTask(
+                name="Move to ready",
+                goal="ready",
+                action_client=self.move_arm_action_client,
+            )
+        )
+        self.add_task(
+            ControlGripperTask(
+                name="Close gripper",
+                goal="close",
+                action_client=self.control_gripper_action_client,
+            )
+        )
 
     def setup_gui(self) -> None:
         with Client.auto_index_client:
@@ -148,11 +209,17 @@ class TaskManager(Node):
             self.update_grid()
 
             self.position_input = ui.input(
-                label="Enter position:", placeholder="extended, ready"
+                label="Enter Move Arm position:", placeholder="extended, ready"
+            )
+            ui.button("Add Move Arm Task", on_click=self.add_move_arm_task_click)
+
+            self.gripper_position_input = ui.input(
+                label="Enter Control Gripper position:", placeholder="open, close"
+            )
+            ui.button(
+                "Add Control Gripper Task", on_click=self.add_control_gripper_task_click
             )
 
-            # ui.button("Add Task", on_click=lambda event: self.add_task_to_move_to_position("specific_position"))
-            ui.button("Add Task", on_click=self.add_task_click)
             ui.button(
                 "Run Tasks", on_click=lambda: asyncio.create_task(self.run_tasks())
             )
@@ -171,14 +238,33 @@ class TaskManager(Node):
         self.get_logger().debug(f"{task_dict}")
         self.grid.update()
 
-    def add_task_click(self, event):
+    def add_move_arm_task_click(self, event):
         position = (
             self.position_input.value
         )  # Get the current value from the input field
         self.add_task_to_move_to_position(position)
 
     def add_task_to_move_to_position(self, position: str) -> None:
-        self.add_task(MoveArmTask(f"Move to {position}", position))
+        self.add_task(
+            MoveArmTask(
+                name=f"Move to {position}",
+                goal=position,
+                action_client=self.move_arm_action_client,
+            )
+        )
+
+    def add_control_gripper_task_click(self, event):
+        position = self.gripper_position_input.value
+        self.add_task_to_control_gripper(position)
+
+    def add_task_to_control_gripper(self, position: str) -> None:
+        self.add_task(
+            ControlGripperTask(
+                name=f"Control gripper to {position}",
+                goal=position,
+                action_client=self.control_gripper_action_client,
+            )
+        )
 
     def add_task(self, task: Task) -> None:
         task.logger = self.get_logger()
@@ -201,10 +287,7 @@ class TaskManager(Node):
         while self.tasks:
             self.set_current_task(self.tasks.popleft())
 
-            if isinstance(self.current_task, MoveArmTask):
-                self.current_task.run(self.move_arm_action_client)
-            else:
-                self.current_task.run()
+            self.current_task.run()
 
             self.update_grid()
 
