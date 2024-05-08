@@ -2,6 +2,8 @@ import litellm
 import ollama
 import logging
 import numpy as np
+from fastembed import TextEmbedding
+import asyncio
 
 from shared.utils.model_server_client import _embed
 
@@ -43,11 +45,18 @@ def get_embedding_litellm(text):
     log_debug(f"Embedding received: {response}")
     return response["data"][0]["embedding"]
 
+global fast_embed_model
+fast_embed_model = None
+def get_embedding_fastembed(text):
+    global fast_embed_model
+    if not fast_embed_model:
+        fast_embed_model = TextEmbedding("mixedbread-ai/mxbai-embed-large-v1")
+    embed = list(fast_embed_model.embed(text))[0]
+    return embed
 
 async def get_embedding(text):
     log_debug(f"Getting embedding for text: {text}")
-    return await get_embedding_sentence_transformers(text)
-
+    return get_embedding_fastembed(text)
 
 def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     dot_product = np.dot(v1, v2)
@@ -55,8 +64,7 @@ def cosine_similarity(v1: np.ndarray, v2: np.ndarray) -> float:
     norm_v2 = np.linalg.norm(v2)
     return dot_product / (norm_v1 * norm_v2)
 
-
-async def get_closest_text(text: str, text_list: list[str], k: int = 1) -> str:
+async def get_closest_text(text: str, text_list: list[str], k: int = 1, threshold:float = 0.5) -> str:
     log_info(f"Getting closest text for: '{text}' in list: {text_list}")
     query_vector = await get_embedding(text)
     log_debug(f"Query vector: {query_vector}")
@@ -67,4 +75,10 @@ async def get_closest_text(text: str, text_list: list[str], k: int = 1) -> str:
         closest_indices = np.argsort(similarities)[-k:]
         return [text_list[i] for i in closest_indices]
     closest_index = np.argmax(similarities)
+    if similarities[closest_index] < threshold:
+        log_info(f"Similarity below threshold: {similarities[closest_index]}")
+        return "None"
     return text_list[closest_index]
+
+def get_closest_text_sync(text: str, text_list: list[str], k: int = 1, threshold:float = 0.5):
+    return asyncio.run(get_closest_text(text, text_list, k, threshold))

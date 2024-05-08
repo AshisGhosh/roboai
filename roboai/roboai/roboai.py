@@ -6,16 +6,26 @@ from PIL import Image  # noqa: F401
 from roboai.agent import Agent
 from roboai.task import Task
 
-from shared.utils.robosim_client import (  # noqa: F401
-    get_objects_on_table,
+# from shared.utils.robosim_client import (  # noqa: F401
+#     get_objects_on_table,
+#     pick,
+#     place,
+#     get_image,
+#     get_grasp_image,
+# ) 
+
+from shared.utils.isaacsim_client import (
+    get_image, 
     pick,
-    place,
-    get_image,
-    get_grasp_image,
-)  # noqa: F401
+    place
+)
+
 from shared.utils.model_server_client import answer_question_from_image  # noqa: F401
 import shared.utils.gradio_client as gradio  # noqa: F401
 import shared.utils.replicate_client as replicate  # noqa: F401
+from shared.utils.llm_utils import get_closest_text_sync as get_closest_text 
+
+import gradio as gr
 
 import logging
 
@@ -63,21 +73,21 @@ class RobotJob:
         """
 
         im = get_image()
-
-        task_scene = Task(
-            "Given the following image, describe the objects on the table."
-        )
-        task_scene.add_task_image(im)
-        scene_agent = Agent(
-            name="Scene",
-            model="ollama/llava:latest",
-            system_message="""
-            You are an agent that describes the scene. Focus on the objects on the table.
-            """,
-        )
-        task_scene.add_solving_agent(scene_agent)
-        output = task_scene.run()
-        # output = gradio.moondream_answer_question_from_image(im, prompt)
+        prompt = "What objects are on the table?"
+        # task_scene = Task(
+        #     prompt
+        # )
+        # task_scene.add_task_image(im)
+        # scene_agent = Agent(
+        #     name="Scene",
+        #     model="ollama/llava:latest",
+        #     system_message="""
+        #     You are an agent that describes the scene. Focus on the objects on the table.
+        #     """,
+        # )
+        # task_scene.add_solving_agent(scene_agent)
+        # output = task_scene.run()
+        output = gradio.moondream_answer_question_from_image(im, prompt)
         # output = replicate.moondream_answer_question_from_image(im, prompt)
         # if "result" not in output.keys():
         #     log.error("No result found.")
@@ -202,15 +212,36 @@ class RobotJob:
             exec(code, exec_vars)
 
 
+def handle_chat(message, history):
+    if message.lower() == "hello":
+        return "Hello! I am"
+    
+    closest_text = get_closest_text(message, ["Clear the table", "What is on the table?"])
+    return closest_text
+
+
 if __name__ == "__main__":
     # job = RobotJob()
     # job.run()
+    gr.ChatInterface(
+        handle_chat,
+        chatbot=gr.Chatbot(height=300),
+        textbox=gr.Textbox(placeholder="Ask me a yes or no question", container=False, scale=7),
+        title="RoboAI",
+        description="Ask the robot to do a task.",
+        theme="soft",
+        examples=["Clear the table", "What is on the table?"],
+        cache_examples=True,
+        retry_btn=None,
+        undo_btn="Delete Previous",
+        clear_btn="Clear",
+    ).launch()
 
     # test vqa
 
     # output = gradio.qwen_vl_max_answer_question_from_image(Image.open("shared/data/tmp.png"), "What is the color of the table?")
-    import shared.utils.huggingface_client as hf
+    # import shared.utils.huggingface_client as hf
 
-    output = hf.vila_query("What is the color of the table?")
+    # output = hf.vila_query("What is the color of the table?")
 
-    print(output)
+    # print(output)
