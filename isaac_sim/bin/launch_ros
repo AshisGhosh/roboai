@@ -1,0 +1,4 @@
+run_robot_api &
+launch_grasp_node &
+run_tasks &
+wait
