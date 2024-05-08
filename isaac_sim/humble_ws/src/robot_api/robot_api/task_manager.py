@@ -266,14 +266,16 @@ class PickTask(PlannerTask):
 
         if self.current_state == "execute_grasp":
             grasp = copy.deepcopy(self.task_vars["grasp_pose"])
-            pre_grasp = copy.deepcopy(grasp)
-            pre_grasp.pose.position.z -= 0.25
+            gripper_grasp = copy.deepcopy(grasp)
+            gripper_grasp.pose.position.z += 0.09
+            pre_grasp = copy.deepcopy(gripper_grasp)
+            pre_grasp.pose.position.z += 0.2
 
             self.task_manager.add_task_to_move_to_position(
                 pre_grasp, name="Move to pregrasp"
             )
             self.task_manager.add_task_to_control_gripper("open", name="Open gripper")
-            self.task_manager.add_task_to_move_to_position(grasp, name="Move to grasp")
+            self.task_manager.add_task_to_move_to_position(gripper_grasp, name="Move to grasp")
             self.task_manager.add_task_to_control_gripper("close", name="Close gripper")
             self.task_manager.add_task_to_move_to_position(
                 pre_grasp, name="Move to pregrasp"
@@ -408,6 +410,7 @@ class TaskManager(Node):
                 on_click=lambda: asyncio.create_task(self.abort_current_task()),
             )
             ui.button("Clear Tasks", on_click=self.clear_tasks)
+            ui.button("Retry Last Task", on_click=self.retry_last_task)
 
     def update_grid(self) -> None:
         task_dict = [
@@ -496,6 +499,19 @@ class TaskManager(Node):
         self.task_history.clear()
         self.update_grid()
         self.get_logger().info("Tasks cleared")
+    
+    def retry_last_task(self) -> None:
+        if self.task_history:
+            self.retry_task(self.task_history[-1])
+        else:
+            self.get_logger().info("No tasks in history to retry")
+    
+    def retry_task(self, task: Task) -> None:
+        self.task_history.remove(task)
+        task.status = TaskStatus.PENDING
+        self.tasks.appendleft(task)
+        self.update_grid()
+        self.get_logger().info(f"Task retried: {task}")
 
     async def run_tasks(self) -> None:
         while self.tasks:

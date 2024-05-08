@@ -63,7 +63,8 @@ class ArmState:
 
 
 # Arm states
-LOOK_DOWN_QUAT = [0.924, -0.383, 0.0, 0.0]
+# LOOK_DOWN_QUAT = [0.924, -0.383, 0.0, 0.0]
+LOOK_DOWN_QUAT = [1.0, 0.0, 0.0, 0.0]
 PICK_CENTER = ArmState(
     name="pick_center", type=ArmState.POSE, pose=[0.5, 0.0, 0.5, *LOOK_DOWN_QUAT]
 )
@@ -77,7 +78,7 @@ class ManipulationAPI(Node):
     def __init__(
         self,
         robot_arm_planning_component="panda_arm",
-        robot_arm_eef_link="panda_link8",
+        robot_arm_eef_link="panda_hand",
     ):
         super().__init__("manipulation_api")
         moveit_config = self._get_moveit_config()

@@ -2,11 +2,14 @@ import time
 import cv2
 from PIL import Image
 import numpy as np
-import threading
 
 import rclpy
 from rclpy.node import Node
 from rclpy.action import ActionServer, CancelResponse, GoalResponse
+
+from tf2_ros import Buffer, TransformListener
+from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
+from tf2_geometry_msgs import do_transform_pose_stamped
 
 import message_filters
 from sensor_msgs.msg import Image as ROSImage
@@ -47,8 +50,8 @@ def get_grid_from_box(box):
 
 
 def get_angle_from_box(box):
-    p1 = box[0]
-    p2 = box[1]
+    p1 = box[2]
+    p2 = box[3]
     angle = np.arctan2(p2[1] - p1[1], p2[0] - p1[0])
     return angle
 
@@ -58,6 +61,10 @@ class ImageProcessor(Node):
         super().__init__("image_processor")
         self.get_logger().info("Image Processor node has been initialized")
 
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
+
+        self.last_image_ts = None
         rgb_sub = message_filters.Subscriber(self, ROSImage, "/rgb_image")
         depth_sub = message_filters.Subscriber(self, ROSImage, "/depth_image")
 
@@ -76,7 +83,6 @@ class ImageProcessor(Node):
         self.grasp_axis_pub = self.create_publisher(Marker, "/grasp_axis_markers", 10)
 
         self.grasps = None
-        self.grasp_lock = threading.Lock()
         self._action_server = ActionServer(
             self,
             GetGrasp,
@@ -91,6 +97,11 @@ class ImageProcessor(Node):
 
     def image_callback(self, rgb_msg, depth_msg):
         # Convert ROS Image message to OpenCV format
+        if not self.camera_info:
+            self.get_logger().warn("Camera info not available")
+            return
+        
+        self.last_image_ts = rclpy.time.Time()
         cv_rgb_image = self.bridge.imgmsg_to_cv2(
             rgb_msg, desired_encoding="passthrough"
         )
@@ -106,22 +117,21 @@ class ImageProcessor(Node):
     def handle_response(self, response, cv_rgb_image, cv_depth_image):
         try:
             grasps = response["result"]
-            if len(grasps):
+            if grasps:
                 self.get_logger().info(
                     f"Received grasp poses: {[(grasp['cls_name'], round(grasp['obj'],2)) for grasp in response['result']]}"
                 )
-            with self.grasp_lock:
+        
                 self.publish_grasp_image(grasps, cv_rgb_image)
                 self.publish_grasp_markers(grasps, cv_depth_image)
 
-                if len(grasps):
-                    grasp_dict = self.get_grasp_poses(grasps, cv_depth_image)
-                    grasp_timestamp = list(grasp_dict.values())[0].header.stamp
-                    self.grasps = {
-                        "timestamp": grasp_timestamp,
-                        "grasps": grasp_dict,
-                    }
-                    self.publish_grasp_axis_markers()
+                grasp_dict = self.get_grasp_poses(grasps, cv_depth_image)
+                grasp_timestamp = self.get_clock().now().to_msg()
+                self.grasps = {
+                    "timestamp": grasp_timestamp,
+                    "grasps": grasp_dict,
+                }
+                self.publish_grasp_axis_markers()
 
         except KeyError as e:
             self.get_logger().warn(
@@ -158,19 +168,18 @@ class ImageProcessor(Node):
 
     def project_to_3d(self, x, y, depth):
         depth = float(depth)
-        if self.camera_info:
-            fx = self.camera_info.k[0]
-            fy = self.camera_info.k[4]
-            cx = self.camera_info.k[2]
-            cy = self.camera_info.k[5]
-            x = (x - cx) * depth / fx
-            y = (y - cy) * depth / fy
-            return x, y, depth
-        return None
+
+        fx = self.camera_info.k[0]
+        fy = self.camera_info.k[4]
+        cx = self.camera_info.k[2]
+        cy = self.camera_info.k[5]
+        x = (x - cx) * depth / fx
+        y = (y - cy) * depth / fy
+        return x, y, depth
 
     def get_grasp_poses(self, grasps, cv_depth_image):
         grasp_poses = {}
-        timestamp = self.get_clock().now().to_msg()
+        timestamp = self.last_image_ts.to_msg()
         for grasp in grasps:
             grasp_points = grasp["r_bbox"]
             center = np.mean(grasp_points, axis=0)
@@ -192,8 +201,24 @@ class ImageProcessor(Node):
                 angle = get_angle_from_box(grasp_points)
                 pose_msg.pose.orientation.z = np.sin(angle / 2)
                 pose_msg.pose.orientation.w = np.cos(angle / 2)
-                grasp_poses[grasp["cls_name"]] = pose_msg
 
+                try:
+                    transform = self.tf_buffer.lookup_transform(
+                        "world",
+                        pose_msg.header.frame_id,
+                        timestamp,
+                        timeout=rclpy.duration.Duration(seconds=10),
+                    )
+                    pose_msg = do_transform_pose_stamped(pose_msg, transform)
+                    grasp_poses[grasp["cls_name"]] = pose_msg
+                except (
+                    LookupException,
+                    ConnectivityException,
+                    ExtrapolationException,
+                ) as e:
+                    self.get_logger().error(f"Failed to transform point: {str(e)}")
+
+        self.get_logger().info(f"Grasp poses: {len(grasp_poses)}")
         return grasp_poses
 
     def publish_grasp_markers(self, grasps, cv_depth_image, publish_grid=False):
@@ -206,7 +231,7 @@ class ImageProcessor(Node):
 
         marker = Marker()
         marker.header.frame_id = self.camera_info.header.frame_id
-        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.header.stamp = self.last_image_ts.to_msg()
         marker.ns = "grasps"
         marker.id = 0
         marker.type = Marker.POINTS
@@ -239,8 +264,8 @@ class ImageProcessor(Node):
             return
 
         marker = Marker()
-        marker.header.frame_id = self.camera_info.header.frame_id
-        marker.header.stamp = self.get_clock().now().to_msg()
+        marker.header.frame_id = list(self.grasps["grasps"].values())[0].header.frame_id
+        marker.header.stamp = self.last_image_ts.to_msg()
         marker.ns = "grasp_axis"
         marker.id = 0
         marker.type = Marker.ARROW
@@ -274,25 +299,26 @@ class ImageProcessor(Node):
         object_name = goal_handle.request.object_name
         self.get_logger().info(f"Looking for object name: {object_name}")
 
-        time_tolerance = rclpy.time.Duration(seconds=0.2)
-        timeout = 3.0
+        time_tolerance = rclpy.time.Duration(seconds=3)
+        timeout = 10.0
         while True and timeout > 0:
-            with self.grasp_lock:
-                if (
-                    self.grasps
-                    and self.get_clock().now()
-                    - rclpy.time.Time.from_msg(self.grasps["timestamp"])
-                    < time_tolerance
-                ):
-                    self.get_logger().info(f"Found grasps for object: {object_name}")
-                    result = GetGrasp.Result(success=True)
-                    grasp = list(self.grasps["grasps"].values())[0]
-                    result.grasp = grasp
-                    goal_handle.succeed()
-                    return result
+            self.get_logger().info(f"Grasps: {len(self.grasps['grasps'])}, TS: {self.grasps['timestamp']}, now: {self.get_clock().now()}")
+            self.get_logger().info(f"Time diff: {(self.get_clock().now() - rclpy.time.Time.from_msg(self.grasps['timestamp'])).nanoseconds/1e9}")
+            if (
+                self.grasps
+                and self.get_clock().now()
+                - rclpy.time.Time.from_msg(self.grasps["timestamp"])
+                < time_tolerance
+            ):
+                self.get_logger().info(f"Found grasps for object: {object_name}")
+                result = GetGrasp.Result(success=True)
+                grasp = list(self.grasps["grasps"].values())[0]
+                result.grasp = grasp
+                goal_handle.succeed()
+                return result
 
             timeout -= 0.1
-            time.sleep(0.1)
+            rclpy.spin_once(self, timeout_sec=0.1)
 
         self.get_logger().warn(f"Couldn't find grasps for object: {object_name}")
         goal_handle.succeed()
@@ -302,7 +328,11 @@ class ImageProcessor(Node):
 def main(args=None):
     rclpy.init(args=args)
     image_processor = ImageProcessor()
-    rclpy.spin(image_processor)
+    try:
+        while True:
+            rclpy.spin_once(image_processor)
+    except KeyboardInterrupt:
+        image_processor.get_logger().info("Shutting down")
     image_processor.destroy_node()
     rclpy.shutdown()
 
