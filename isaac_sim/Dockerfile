@@ -84,6 +84,7 @@ RUN apt-get remove git -y
 WORKDIR /isaac-sim
 
 RUN ./python.sh -m pip install nicegui
+RUN apt-get install -y tmux
 
 RUN echo "source /isaac-sim/setup_python_env.sh" >> /root/.bashrc
 ENV PYTHONPATH=/isaac-sim:/isaac-sim/roboai:$PYTHONPATH
