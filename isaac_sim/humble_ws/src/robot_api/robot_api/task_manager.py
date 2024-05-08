@@ -15,8 +15,15 @@ from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
 
 from geometry_msgs.msg import PoseStamped
+from sensor_msgs.msg import Image as ROSImage
 
 from roboai_interfaces.action import MoveArm, ControlGripper, GetGrasp
+
+# RoboAI Interface imports
+from starlette.responses import StreamingResponse
+from PIL import Image
+import io
+import numpy as np
 
 
 def pose_to_list(pose):
@@ -275,7 +282,9 @@ class PickTask(PlannerTask):
                 pre_grasp, name="Move to pregrasp"
             )
             self.task_manager.add_task_to_control_gripper("open", name="Open gripper")
-            self.task_manager.add_task_to_move_to_position(gripper_grasp, name="Move to grasp")
+            self.task_manager.add_task_to_move_to_position(
+                gripper_grasp, name="Move to grasp"
+            )
             self.task_manager.add_task_to_control_gripper("close", name="Close gripper")
             self.task_manager.add_task_to_move_to_position(
                 pre_grasp, name="Move to pregrasp"
@@ -499,13 +508,13 @@ class TaskManager(Node):
         self.task_history.clear()
         self.update_grid()
         self.get_logger().info("Tasks cleared")
-    
+
     def retry_last_task(self) -> None:
         if self.task_history:
             self.retry_task(self.task_history[-1])
         else:
             self.get_logger().info("No tasks in history to retry")
-    
+
     def retry_task(self, task: Task) -> None:
         self.task_history.remove(task)
         task.status = TaskStatus.PENDING
@@ -552,6 +561,71 @@ class TaskManager(Node):
         super().destroy_node()
 
 
+global agentview_image
+global task_manager
+
+
+class RoboAIInterface(Node):
+    def __init__(self, task_manager: TaskManager):
+        super().__init__("roboai_interface")
+        self.task_manager = task_manager
+
+        self.agentview_image = None
+        self.create_subscription(
+            ROSImage,
+            "/agentview/rgb",
+            self.image_callback,
+            10,
+        )
+
+        self.get_logger().info("RoboAI Interface initialized")
+
+    def image_callback(self, msg: ROSImage) -> None:
+        self.agentview_image = msg
+        global agentview_image
+        agentview_image = msg
+
+    @classmethod
+    @app.get("/get_image")
+    async def get_image() -> str:
+        if agentview_image:
+            # return base64.b64encode(agentview_image.data).decode("utf-8")
+            # Image.frombytes("RGB", (agentview_image.width, agentview_image.height), agentview_image.data)
+            print(f"Image type: {type(agentview_image.data)}")
+            img_array = np.frombuffer(agentview_image.data, np.uint8).reshape(
+                agentview_image.height, agentview_image.width, 3
+            )
+            img = Image.fromarray(img_array)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            return StreamingResponse(buf, media_type="image/png")
+        return None
+
+    @classmethod
+    @app.post("/add_task")
+    async def add_task(task: str) -> None:
+        if task == "pick":
+            task_manager.add_task(
+                PickTask(
+                    name="Pick task",
+                    task_manager=task_manager,
+                    task_vars=task_manager.task_vars,
+                    object_name="cereal",
+                )
+            )
+            return True
+        return False
+
+    @app.post("/run_tasks")
+    async def run_tasks() -> None:
+        asyncio.create_task(task_manager.run_tasks())
+
+    def destroy_node(self):
+        self.task_manager.destroy_node()
+        super().destroy_node()
+
+
 def main() -> None:
     # NOTE: This function is defined as the ROS entry point in setup.py, but it's empty to enable NiceGUI auto-reloading
     # https://github.com/zauberzeug/nicegui/blob/main/examples/ros2/ros2_ws/src/gui/gui/node.py
@@ -560,13 +634,20 @@ def main() -> None:
 
 def ros_main() -> None:
     rclpy.init()
+    global task_manager
     task_manager = TaskManager()
     executor = MultiThreadedExecutor()
     executor.add_node(task_manager)
+    task_manager.get_logger().info("Task Manager started")
+    roboai_interface = RoboAIInterface(task_manager)
+    executor.add_node(roboai_interface)
+    task_manager.get_logger().info("RoboAI Interface started")
     try:
         executor.spin()
     finally:
         task_manager.destroy_node()
+        roboai_interface.destroy_node()
+
         rclpy.shutdown()
 
 

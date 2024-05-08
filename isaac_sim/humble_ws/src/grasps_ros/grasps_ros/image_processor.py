@@ -100,7 +100,7 @@ class ImageProcessor(Node):
         if not self.camera_info:
             self.get_logger().warn("Camera info not available")
             return
-        
+
         self.last_image_ts = rclpy.time.Time()
         cv_rgb_image = self.bridge.imgmsg_to_cv2(
             rgb_msg, desired_encoding="passthrough"
@@ -121,7 +121,7 @@ class ImageProcessor(Node):
                 self.get_logger().info(
                     f"Received grasp poses: {[(grasp['cls_name'], round(grasp['obj'],2)) for grasp in response['result']]}"
                 )
-        
+
                 self.publish_grasp_image(grasps, cv_rgb_image)
                 self.publish_grasp_markers(grasps, cv_depth_image)
 
@@ -302,8 +302,12 @@ class ImageProcessor(Node):
         time_tolerance = rclpy.time.Duration(seconds=3)
         timeout = 10.0
         while True and timeout > 0:
-            self.get_logger().info(f"Grasps: {len(self.grasps['grasps'])}, TS: {self.grasps['timestamp']}, now: {self.get_clock().now()}")
-            self.get_logger().info(f"Time diff: {(self.get_clock().now() - rclpy.time.Time.from_msg(self.grasps['timestamp'])).nanoseconds/1e9}")
+            self.get_logger().info(
+                f"Grasps: {len(self.grasps['grasps'])}, TS: {self.grasps['timestamp']}, now: {self.get_clock().now()}"
+            )
+            self.get_logger().info(
+                f"Time diff: {(self.get_clock().now() - rclpy.time.Time.from_msg(self.grasps['timestamp'])).nanoseconds/1e9}"
+            )
             if (
                 self.grasps
                 and self.get_clock().now()
