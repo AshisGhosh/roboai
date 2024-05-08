@@ -6,6 +6,7 @@ import asyncio
 from pathlib import Path
 from nicegui import Client, app, ui, ui_run
 from abc import ABC, abstractmethod
+import copy
 
 # generic ros libraries
 import rclpy
@@ -13,7 +14,21 @@ from rclpy.node import Node
 from rclpy.action import ActionClient
 from rclpy.executors import MultiThreadedExecutor
 
-from roboai_interfaces.action import MoveArm, ControlGripper
+from geometry_msgs.msg import PoseStamped
+
+from roboai_interfaces.action import MoveArm, ControlGripper, GetGrasp
+
+
+def pose_to_list(pose):
+    return [
+        pose.position.x,
+        pose.position.y,
+        pose.position.z,
+        pose.orientation.x,
+        pose.orientation.y,
+        pose.orientation.z,
+        pose.orientation.w,
+    ]
 
 
 class TaskStatus(Enum):
@@ -95,7 +110,7 @@ class ActionClientTask(Task):
 
     def get_result_callback(self, future) -> None:
         self.result = future.result().result
-        print(f"Result received: {self.result}, {type(self.result.status)}")
+        self.log(f"Result received: {self.result}, {type(self.result.status)}")
         if self.result.status == "SUCCEEDED":
             self.log(f"Result received: {self.result.message}")
             self.update_status(TaskStatus.SUCCESS)
@@ -130,6 +145,8 @@ class MoveArmTask(ActionClientTask):
                 raise ValueError(
                     f"Invalid goal length: {self.goal}, length: {len(self.goal)}"
                 )
+        elif isinstance(self.goal, PoseStamped):
+            goal_msg.cartesian_pose_goal = self.goal
         else:
             raise ValueError(f"Invalid goal: {self.goal}, type: {type(self.goal)}")
 
@@ -151,16 +168,157 @@ class ControlGripperTask(ActionClientTask):
         return goal_msg
 
 
+class GetGraspTask(ActionClientTask):
+    def __init__(
+        self, name, goal_object: str, action_client, task_vars, logger=None
+    ) -> None:
+        super().__init__(name, action_client, GetGrasp, logger=None)
+        self.goal_object = goal_object
+        self.task_vars = task_vars
+
+    def create_goal_msg(self) -> None:
+        goal_msg = GetGrasp.Goal()
+        if isinstance(self.goal_object, str):
+            goal_msg.object_name = self.goal_object
+        else:
+            raise ValueError(f"Invalid goal: {self.goal_object}")
+
+        return goal_msg
+
+    def get_result_callback(self, future) -> None:
+        self.result = future.result().result
+        self.log(f"Result received: {self.result}")
+
+        if self.result.success:
+            self.log("Grasp received")
+            self.update_status(TaskStatus.SUCCESS)
+            self.task_vars["grasp_pose"] = self.result.grasp
+        else:
+            self.log("Grasp not received")
+            self.update_status(TaskStatus.FAILURE)
+
+
+class PlannerTask(Task):
+    def __init__(self, name, task_manager, task_vars, logger=None) -> None:
+        super().__init__(name, logger)
+        self.task_manager = task_manager
+        self.states = []
+        self.current_state = None
+        self.task_vars = task_vars
+
+    def run(self) -> None:
+        self.log(f"Running planner: {self.name}")
+        self.update_status(TaskStatus.RUNNING)
+        try:
+            self.plan()
+        except Exception as e:
+            self.log(f"Error while planning: {e}")
+            self.update_status(TaskStatus.FAILURE)
+
+    def get_next_state(self) -> str:
+        if self.current_state is None:
+            self.current_state = self.states.pop(0)
+        else:
+            self.current_state = self.states[self.states.index(self.current_state) + 1]
+        return self.current_state
+
+    @abstractmethod
+    def plan(self) -> None:
+        pass
+
+
+class PickTask(PlannerTask):
+    def __init__(
+        self,
+        name,
+        task_manager,
+        task_vars,
+        object_name,
+        current_state=None,
+        logger=None,
+    ) -> None:
+        super().__init__(name, task_manager, task_vars, logger)
+        self.object_name = object_name
+        self.states = [
+            "get_grasp",
+            "execute_grasp",
+            "move_to_ready",
+        ]
+        self.current_state = current_state or self.states[0]
+
+    def plan(self) -> None:
+        self.log(f"Running pick task: {self.name}")
+        self.update_status(TaskStatus.RUNNING)
+
+        if self.current_state == "get_grasp":
+            self.task_manager.add_task(
+                GetGraspTask(
+                    name=f"Get grasp for {self.object_name}",
+                    goal_object=self.object_name,
+                    action_client=self.task_manager.get_grasp_action_client,
+                    task_vars=self.task_vars,
+                )
+            )
+
+            self.add_next_plan()
+            self.update_status(TaskStatus.SUCCESS)
+            return
+
+        if self.current_state == "execute_grasp":
+            grasp = copy.deepcopy(self.task_vars["grasp_pose"])
+            pre_grasp = copy.deepcopy(grasp)
+            pre_grasp.pose.position.z -= 0.25
+
+            self.task_manager.add_task_to_move_to_position(
+                pre_grasp, name="Move to pregrasp"
+            )
+            self.task_manager.add_task_to_control_gripper("open", name="Open gripper")
+            self.task_manager.add_task_to_move_to_position(grasp, name="Move to grasp")
+            self.task_manager.add_task_to_control_gripper("close", name="Close gripper")
+            self.task_manager.add_task_to_move_to_position(
+                pre_grasp, name="Move to pregrasp"
+            )
+
+            self.add_next_plan()
+            self.update_status(TaskStatus.SUCCESS)
+            return
+
+        if self.current_state == "move_to_ready":
+            self.task_manager.add_task(
+                MoveArmTask(
+                    name="Move to ready",
+                    goal="ready",
+                    action_client=self.task_manager.move_arm_action_client,
+                )
+            )
+            self.update_status(TaskStatus.SUCCESS)
+            return
+
+    def add_next_plan(self):
+        next_state = self.get_next_state()
+        self.task_manager.add_task(
+            PickTask(
+                name=f"Pick {self.object_name} - {next_state}",
+                task_manager=self.task_manager,
+                task_vars=self.task_vars,
+                object_name=self.object_name,
+                current_state=next_state,
+            )
+        )
+
+
 class TaskManager(Node):
     def __init__(self) -> None:
         super().__init__("task_manager")
         self.tasks = deque()
         self.current_task = None
         self.task_history = []
+        self.task_vars = {}
         self.move_arm_action_client = ActionClient(self, MoveArm, "/move_arm")
         self.control_gripper_action_client = ActionClient(
             self, ControlGripper, "/control_gripper"
         )
+        self.get_grasp_action_client = ActionClient(self, GetGrasp, "/get_grasp")
         self.setup_gui()
 
         self.get_logger().info("Task Manager initialized")
@@ -266,10 +424,14 @@ class TaskManager(Node):
         )  # Get the current value from the input field
         self.add_task_to_move_to_position(position)
 
-    def add_task_to_move_to_position(self, position: str) -> None:
+    def add_task_to_move_to_position(
+        self, position: str | list[float] | PoseStamped, name: str = None
+    ) -> None:
+        if name is None:
+            name = f"Move to {position}"
         self.add_task(
             MoveArmTask(
-                name=f"Move to {position}",
+                name=name,
                 goal=position,
                 action_client=self.move_arm_action_client,
             )
@@ -279,7 +441,9 @@ class TaskManager(Node):
         position = self.gripper_position_input.value
         self.add_task_to_control_gripper(position)
 
-    def add_task_to_control_gripper(self, position: str) -> None:
+    def add_task_to_control_gripper(self, position: str, name=None) -> None:
+        if name is None:
+            name = f"Control gripper to {position}"
         self.add_task(
             ControlGripperTask(
                 name=f"Control gripper to {position}",
@@ -290,29 +454,30 @@ class TaskManager(Node):
 
     def add_move_arm_task_cartesian_click(self, event):
         position = [float(x) for x in self.numerical_list_input.value.split(",")]
-        self.add_task_to_move_to_cartesian(position)
-
-    def add_task_to_move_to_cartesian(self, position: list[float]) -> None:
-        self.add_task(
-            MoveArmTask(
-                name=f"Move to cartesian: {position}",
-                goal=position,
-                action_client=self.move_arm_action_client,
-            )
+        self.add_task_to_move_to_position(
+            position, name=f"Move to cartesian {position}"
         )
 
     def add_pick_tasks_click(self, event):
-        position = [0.5, 0.1, 0.3, 0.924, -0.383, 0.0, 0.0]
-        self.add_pick_tasks(position)
+        # position = [0.5, 0.1, 0.3, 0.924, -0.383, 0.0, 0.0]
+        # self.add_pick_tasks(position)
+        self.add_task(
+            PickTask(
+                name="Pick task",
+                task_manager=self,
+                task_vars=self.task_vars,
+                object_name="cereal",
+            )
+        )
 
     def add_pick_tasks(self, grasp_pose: list[float]) -> None:
         pre_grasp = grasp_pose.copy()
         pre_grasp[2] += 0.1
-        self.add_task_to_move_to_cartesian(pre_grasp)
+        self.add_task_to_move_to_position(pre_grasp)
         self.add_task_to_control_gripper("open")
-        self.add_task_to_move_to_cartesian(grasp_pose)
+        self.add_task_to_move_to_position(grasp_pose)
         self.add_task_to_control_gripper("close")
-        self.add_task_to_move_to_cartesian(pre_grasp)
+        self.add_task_to_move_to_position(pre_grasp)
         self.add_task_to_move_to_position("ready")
 
     def add_task(self, task: Task) -> None:
@@ -335,15 +500,15 @@ class TaskManager(Node):
     async def run_tasks(self) -> None:
         while self.tasks:
             self.set_current_task(self.tasks.popleft())
-
             self.current_task.run()
-
             self.update_grid()
 
             while self.current_task.status == TaskStatus.RUNNING:
                 await asyncio.sleep(0.1)
-                if self.current_task.status == TaskStatus.ABORTED:
-                    break
+                if self.current_task.status in [TaskStatus.ABORTED, TaskStatus.FAILURE]:
+                    self.get_logger().error(f"Task failed: {self.current_task}")
+                    self.update_grid()
+                    return
 
         self.set_current_task(None)
         self.get_logger().info("All tasks completed")

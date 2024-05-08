@@ -4,6 +4,10 @@ from dataclasses import dataclass
 
 # generic ros libraries
 import rclpy
+from tf2_ros import Buffer, TransformListener
+from tf2_ros import LookupException, ConnectivityException, ExtrapolationException
+from tf2_geometry_msgs import do_transform_pose_stamped
+
 
 # moveit python library
 from moveit.core.robot_state import RobotState
@@ -17,6 +21,8 @@ from geometry_msgs.msg import PoseStamped, Pose
 from moveit_msgs.msg import Constraints
 from rclpy.action import ActionServer, CancelResponse, GoalResponse, ActionClient
 from control_msgs.action import GripperCommand
+from visualization_msgs.msg import Marker
+
 from roboai_interfaces.action import MoveArm, ControlGripper
 
 
@@ -36,7 +42,7 @@ class ArmState:
             raise ValueError("Either joint_values or pose must be set")
 
     @classmethod
-    def get_pose_as_pose(self, pose_array: List[float | int]) -> Pose:
+    def get_pose_array_as_pose(self, pose_array: List[float | int]) -> Pose:
         pose = Pose()
         pose.position.x = pose_array[0]
         pose.position.y = pose_array[1]
@@ -46,6 +52,14 @@ class ArmState:
         pose.orientation.z = pose_array[5]
         pose.orientation.w = pose_array[6]
         return pose
+
+    @classmethod
+    def get_pose_array_as_pose_stamped(
+        self, pose_array: List[float | int]
+    ) -> PoseStamped:
+        pose_stamped = PoseStamped()
+        pose_stamped.pose = self.get_pose_array_as_pose(pose_array)
+        return pose_stamped
 
 
 # Arm states
@@ -67,6 +81,9 @@ class ManipulationAPI(Node):
     ):
         super().__init__("manipulation_api")
         moveit_config = self._get_moveit_config()
+
+        self.tf_buffer = Buffer()
+        self.tf_listener = TransformListener(self.tf_buffer, self)
 
         self.robot_arm_planning_component_name = robot_arm_planning_component
         self.robot_arm_eef_link = robot_arm_eef_link
@@ -96,6 +113,10 @@ class ManipulationAPI(Node):
             execute_callback=self.gripper_execute_callback,
             goal_callback=self.gripper_goal_callback,
             cancel_callback=self.cancel_callback,
+        )
+
+        self.cartesian_goal_marker_publisher = self.create_publisher(
+            Marker, "cartesian_goal_marker", 10
         )
 
         self.get_logger().info("Manipulation API initialized")
@@ -145,7 +166,8 @@ class ManipulationAPI(Node):
             goal.cartesian_goal,
             goal.joint_goal,
             goal.constraints_goal,
-            None,
+            goal.cartesian_pose_goal,
+            goal.start_state,
         )
         self.get_logger().info(f"Move arm status: {status.status}")
         result.status = status.status
@@ -172,6 +194,21 @@ class ManipulationAPI(Node):
         else:
             goal_handle.abort()
         return result
+
+    def publish_cartesian_goal_marker(self, pose_stamped: PoseStamped):
+        marker = Marker()
+        marker.header = pose_stamped.header
+        marker.type = Marker.ARROW
+        marker.action = Marker.ADD
+        marker.pose = pose_stamped.pose
+        marker.scale.x = 0.1
+        marker.scale.y = 0.01
+        marker.scale.z = 0.01
+        marker.color.a = 1.0
+        marker.color.r = 1.0
+        marker.color.g = 0.0
+        marker.color.b = 0.0
+        self.cartesian_goal_marker_publisher.publish(marker)
 
     def plan(
         self,
@@ -250,14 +287,15 @@ class ManipulationAPI(Node):
         cartesian_goal=None,
         joint_goal=None,
         constraints_goal=None,
+        cartesian_pose_goal=None,
         start_state=None,
     ):
         self.get_logger().info("Moving arm")
 
-        if start_state is not None:
+        if start_state:
             raise NotImplementedError("Custom start state not implemented")
 
-        if configuration_goal not in [None, ""]:
+        if configuration_goal:
             if configuration_goal in ["extended", "ready"]:
                 goal_state = configuration_goal
             elif configuration_goal in ARM_STATES:
@@ -268,21 +306,49 @@ class ManipulationAPI(Node):
                     return self.move_arm(cartesian_goal=goal_state.pose)
             else:
                 raise ValueError("Invalid configuration goal")
-        elif cartesian_goal is not None:
+        elif cartesian_goal:
             pose_stamped = PoseStamped()
             pose_stamped.header.frame_id = "panda_link0"
-            pose_stamped.pose = ArmState.get_pose_as_pose(cartesian_goal)
+            pose_stamped.pose = ArmState.get_pose_array_as_pose(cartesian_goal)
             goal_state = pose_stamped
-        elif joint_goal is not None:
+            self.publish_cartesian_goal_marker(goal_state)
+        elif joint_goal:
             robot_model = self.robot.get_robot_model()
             robot_state = RobotState(robot_model)
             robot_state.set_joint_group_positions(
                 self.robot_arm_planning_component_name, joint_goal
             )
             goal_state = robot_state
-        elif constraints_goal is not None:
+        elif constraints_goal:
             raise NotImplementedError("Constraints goal not implemented")
             goal_state = constraints_goal
+        elif cartesian_pose_goal:
+            goal_state = cartesian_pose_goal
+            if goal_state.header.frame_id == "":
+                goal_state.header.frame_id = "panda_link0"
+
+            if goal_state.header.frame_id != "panda_link0":
+                self.get_logger().warn(
+                    f"Transforming goal state from {goal_state.header.frame_id} to panda_link0"
+                )
+                self.get_logger().info(f"Goal state: {type(goal_state)}")
+
+                try:
+                    transform = self.tf_buffer.lookup_transform(
+                        "panda_link0",
+                        goal_state.header.frame_id,
+                        goal_state.header.stamp,
+                        timeout=rclpy.duration.Duration(seconds=1),
+                    )
+                    goal_state = do_transform_pose_stamped(goal_state, transform)
+                except (
+                    LookupException,
+                    ConnectivityException,
+                    ExtrapolationException,
+                ) as e:
+                    self.get_logger().error(f"Failed to transform point: {str(e)}")
+
+            self.publish_cartesian_goal_marker(goal_state)
         else:
             raise ValueError("No goal state provided")
 

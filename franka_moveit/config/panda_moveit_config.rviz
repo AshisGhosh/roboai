@@ -313,7 +313,7 @@ Visualization Manager:
         Robot Color: 150; 50; 150
         Show Robot Collision: false
         Show Robot Visual: true
-        Show Trail: false
+        Show Trail: true
         State Display Time: 3x
         Trail Step Size: 1
         Trajectory Topic: /display_planned_path
@@ -498,7 +498,7 @@ Visualization Manager:
       Enabled: true
       Name: GraspMarkers
       Namespaces:
-        {}
+        grasps: true
       Topic:
         Depth: 5
         Durability Policy: Volatile
@@ -534,6 +534,32 @@ Visualization Manager:
         History Policy: Keep Last
         Reliability Policy: Best Effort
         Value: /agentview/instance_segmentation_repub
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: GraspAxisMarkers
+      Namespaces:
+        grasp_axis: true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /grasp_axis_markers
+      Value: true
+    - Class: rviz_default_plugins/Marker
+      Enabled: true
+      Name: CartesianGoalMarker
+      Namespaces:
+        "": true
+      Topic:
+        Depth: 5
+        Durability Policy: Volatile
+        Filter size: 10
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+        Value: /cartesian_goal_marker
       Value: true
   Enabled: true
   Global Options:
@@ -581,25 +607,25 @@ Visualization Manager:
   Views:
     Current:
       Class: rviz_default_plugins/Orbit
-      Distance: 3.596186637878418
+      Distance: 2.393928289413452
       Enable Stereo Rendering:
         Stereo Eye Separation: 0.05999999865889549
         Stereo Focal Distance: 1
         Swap Stereo Eyes: false
         Value: false
       Focal Point:
-        X: 0.02386285550892353
-        Y: 0.15478567779064178
-        Z: 0.039489321410655975
+        X: 0.3836086690425873
+        Y: -0.023442808538675308
+        Z: 0.27808091044425964
       Focal Shape Fixed Size: true
       Focal Shape Size: 0.05000000074505806
       Invert Z Axis: false
       Name: Current View
       Near Clip Distance: 0.009999999776482582
-      Pitch: 0.3053983151912689
+      Pitch: 0.5397965908050537
       Target Frame: <Fixed Frame>
       Value: Orbit (rviz)
-      Yaw: 6.1585774421691895
+      Yaw: 4.975391864776611
     Saved: ~
 Window Geometry:
   AgentViewRGB:

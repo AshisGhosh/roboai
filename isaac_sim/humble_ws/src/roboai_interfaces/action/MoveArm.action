@@ -3,6 +3,7 @@ float64[] cartesian_goal
 float64[] joint_goal
 float64[] constraints_goal
 float64[] start_state
+geometry_msgs/PoseStamped cartesian_pose_goal
 ---
 string status
 string message
