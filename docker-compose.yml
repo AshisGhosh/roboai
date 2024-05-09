@@ -139,8 +139,8 @@ services:
       - DISPLAY=${DISPLAY}
       - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
-    command: /bin/bash -c "python -u -m roboai.parse_images"
-    # command:  /bin/bash -c "while true; do sleep 30; done"
+    # command: /bin/bash -c "python -u -m roboai.parse_images"
+    command:  /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
   
   grasp-server:

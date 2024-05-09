@@ -498,7 +498,7 @@ def html_from_output_json(json_file_path, html_output_path):
                 'Final Score': score_data.get('final_score', ''),
                 'Matched Name Avg SemScore': score_data.get('sem_score_match_stats', {}).get('mean', ''),
                 'Count Accuracy': score_data.get('count_accuracy', ''),
-                'Pairwise Order Accuracy': score_data.get('order_accuracy', {}).get('normalized_kendall_tau', ''),
+                'Order Accuracy': score_data.get('order_accuracy', {}).get('normalized_kendall_tau', ''),
                 'Matches & Unpaired Responses': per_file_matched_names_formatted,
                 'All SemScores': per_file_all_sem_scores_formatted,
                 'All SemScore Stats': per_file_all_sem_score_stats_formatted, 
