@@ -231,7 +231,7 @@ services:
 
   
   ollama-server:
-    image: ollama/ollama
+    image: ollama/ollama:latest
     volumes:
       - ~/.cache/ollama:/root/.ollama
     ports:

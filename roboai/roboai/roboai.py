@@ -2,6 +2,7 @@ from pydantic import BaseModel
 from typing import Callable
 import base64  # noqa: F401
 from PIL import Image  # noqa: F401
+from abc import ABC, abstractmethod
 
 from roboai.agent import Agent
 from roboai.task import Task
@@ -60,40 +61,47 @@ def extract_code(raw_input, language="python"):
     log.debug(f"Extracted code: \n{code}")
     return code
 
-
-class RobotJob:
+class RobotJob(ABC):
     def __init__(self):
         pass
 
+    @abstractmethod
     def run(self):
+        pass
+class ClearTableJob(RobotJob):
+    def __init__(self):
+        pass
+
+    def run(self, chat_history=None):
         """
         Job to:
             1. Understand the scene
             2. Create a plan to clear the table
         """
+        if chat_history:
+            if not chat_history[-1][1]:
+                chat_history[-1][1] = ""
+            else:
+                chat_history[-1][1] += "\n"
+            chat_history[-1][1] += "Getting image...\n"
+            yield chat_history
 
         im = get_image()
         prompt = "What objects are on the table?"
-        # task_scene = Task(
-        #     prompt
-        # )
-        # task_scene.add_task_image(im)
-        # scene_agent = Agent(
-        #     name="Scene",
-        #     model="ollama/llava:latest",
-        #     system_message="""
-        #     You are an agent that describes the scene. Focus on the objects on the table.
-        #     """,
-        # )
-        # task_scene.add_solving_agent(scene_agent)
-        # output = task_scene.run()
-        output = gradio.moondream_answer_question_from_image(im, prompt)
-        # output = replicate.moondream_answer_question_from_image(im, prompt)
-        # if "result" not in output.keys():
-        #     log.error("No result found.")
-        #     return
 
-        # output = output["result"]
+        if chat_history:
+            chat_history[-1][1] += "Asking VLA model...\n"
+            yield chat_history
+        
+        output = gradio.moondream_answer_question_from_image(im, prompt)["result"]
+        if chat_history:
+            chat_history[-1][1] += f"Response:\n{output}\n"
+            yield chat_history
+
+        
+        if chat_history:
+            chat_history[-1][1] += "Creating plan...\n"
+            yield chat_history
 
         task = Task(
             f"Given the following summary, return just a list in python of the objects on the table. The table is not an object. Summary: \n{output}",
@@ -113,10 +121,18 @@ class RobotJob:
         output = task.run()
         # output = '```objects_on_table = ["Box of Cereal", "Carton of Milk", "Can of Soup"]```'
         code = extract_code(output)
-        exec_vars = {}
-        exec(code, exec_vars)
-        log.info(exec_vars.get("objects_on_table", None))
-        list_of_objects = exec_vars.get("objects_on_table", None)
+        try:
+            exec_vars = {}
+            exec(code, exec_vars)
+            log.info(exec_vars.get("objects_on_table", None))
+            list_of_objects = exec_vars.get("objects_on_table", None)
+        except Exception as e:
+            log.error(f"Error executing code: {e}")
+            list_of_objects = None
+            if chat_history:
+                chat_history[-1][1] += f"Error executing code: {e}"
+                yield chat_history
+            return
 
         plan_task = Task(
             f"""Create a plan for a robot to remove the following objects from the table:
@@ -163,6 +179,14 @@ class RobotJob:
         output = plan_task.run()
         log.info(output)
 
+        if chat_history:
+            chat_history[-1][1] += f"Response:\n{output}"
+            yield chat_history
+
+        if chat_history:
+            chat_history[-1][1] += "Converting plan to code...\n"
+            yield chat_history
+
         plan_generated = True
         code = extract_code(output)
         exec_vars = plan_task.get_exec_vars()
@@ -207,41 +231,146 @@ class RobotJob:
             log.info(coder_task)
             output = coder_task.run()
 
+            if chat_history:
+                chat_history[-1][1] += f"Response:\n{output}\n"
+                yield chat_history
+
+            if chat_history:
+                chat_history[-1][1] += "Extracting and running code...\n"
+                yield chat_history
+
             code = extract_code(output)
-            exec_vars = coder_task.get_exec_vars()
-            exec(code, exec_vars)
+
+            if chat_history:
+                chat_history[-1][1] += f"Response:\n```{code}```"
+                yield chat_history
+
+            try:
+                exec_vars = coder_task.get_exec_vars()
+                exec(code, exec_vars)
+                result = "Successful execution of plan."
+            except Exception as e:
+                log.error(f"Error executing code: {e}")
+                result = "Error executing plan."
+            finally:
+                if chat_history:
+                    chat_history[-1][1] += f"\nResponse:\n**{result}**"
+                    yield chat_history
+
+class WhatIsOnTableJob(RobotJob):
+    image = None
+    def __init__(self):
+        self.image = get_image()
+
+    def get_image(self):
+        if not self.image:
+            self.image = get_image()
+        return self.image
+
+    def run(self, chat_history=None):
+        if chat_history:
+            if not chat_history[-1][1]:
+                chat_history[-1][1] = ""
+            else:
+                chat_history[-1][1] += "\n"
+                yield chat_history
+            chat_history[-1][1] += "Getting image...\n"
+            yield chat_history
+
+        im = get_image()
+        prompt = "What objects are on the table?"
+        
+        if chat_history:
+            chat_history[-1][1] += "Asking VLA model...\n"
+            yield chat_history
+
+        output = gradio.moondream_answer_question_from_image(im, prompt)
+        if chat_history:
+            chat_history[-1][1] += f"Response:\n{output['result']}"
+            yield chat_history
+        return output["result"]
+
+class TestJob(RobotJob):
+    def __init__(self):
+        pass
+
+    def run(self, chat_history=None):
+        responses = [
+            "I am a robot.",
+            "I can help you with tasks.",
+            "Ask me to do something"
+        ]
+        if chat_history:
+            if not chat_history[-1][1]:
+                chat_history[-1][1] = ""
+            else:
+                chat_history[-1][1] += "\n"
+                yield chat_history
+            for response in responses:
+                chat_history[-1][1] += response
+                yield chat_history
 
 
-def handle_chat(message, history):
-    if message.lower() == "hello":
-        return "Hello! I am"
+def chat():
+    with gr.Blocks() as demo:
+        gr.Markdown("## RoboAI Chatbot")
+        chatbot = gr.Chatbot(height=700)
+        msg = gr.Textbox(placeholder="Ask me to do a task.", container=False, scale=7)
+        image_output = gr.Image(label="Response Image")
+        clear = gr.ClearButton([msg, chatbot])
+        current_task = [None]
+
+        def respond(message, chat_history):
+            nonlocal current_task
+            closest_text = get_closest_text(message, ["Clear the table", "What is on the table?"])
+            response = None
+            image = None
+            if closest_text:
+                print(f"Closest text: {closest_text}")
+                current_task[0] = closest_text
+                response = f"Doing task: {closest_text}"
+                # image = WhatIsOnTableJob().get_image()
+            chat_history.append((message, None))
+            return "", chat_history, image
+        
+        def do_function(chat_history):
+            nonlocal current_task
+            if not current_task:
+                return "", chat_history, None
+
+            chat_history[-1][1] = f"**{current_task[0]}**"
+            yield chat_history
+            
+            if current_task[0] == "What is on the table?":
+                job = WhatIsOnTableJob()
+                image = job.get_image()
+                yield from job.run(chat_history)
+            elif current_task[0] == "Clear the table":
+                job = ClearTableJob()
+                yield from job.run(chat_history)
+                image = WhatIsOnTableJob().get_image()
+            elif current_task[0] == "Test Job":
+                job = TestJob()
+                yield from job.run(chat_history)
+            else:
+                chat_history[-1][1] = "Sorry, I don't understand that command."
+                image = None
+
+            return None, chat_history, image            
+        
+        def get_image_output():
+            image_output = WhatIsOnTableJob().get_image()
+            return image_output
+
+        msg.submit(respond, [msg, chatbot], [msg, chatbot, image_output], queue=False).then(
+            get_image_output, [], [image_output]
+        ).then(
+            do_function, chatbot, chatbot
+        )
+
     
-    closest_text = get_closest_text(message, ["Clear the table", "What is on the table?"])
-    return closest_text
-
+    demo.queue()
+    demo.launch()
 
 if __name__ == "__main__":
-    # job = RobotJob()
-    # job.run()
-    gr.ChatInterface(
-        handle_chat,
-        chatbot=gr.Chatbot(height=300),
-        textbox=gr.Textbox(placeholder="Ask me a yes or no question", container=False, scale=7),
-        title="RoboAI",
-        description="Ask the robot to do a task.",
-        theme="soft",
-        examples=["Clear the table", "What is on the table?"],
-        cache_examples=True,
-        retry_btn=None,
-        undo_btn="Delete Previous",
-        clear_btn="Clear",
-    ).launch()
-
-    # test vqa
-
-    # output = gradio.qwen_vl_max_answer_question_from_image(Image.open("shared/data/tmp.png"), "What is the color of the table?")
-    # import shared.utils.huggingface_client as hf
-
-    # output = hf.vila_query("What is the color of the table?")
-
-    # print(output)
+    chat()
