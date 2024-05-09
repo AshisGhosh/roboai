@@ -372,19 +372,19 @@ class TaskManager(Node):
     def setup_gui(self) -> None:
         with Client.auto_index_client:
             ui.label("Task Manager").style("font-size: 24px")
+
             self.grid = ui.aggrid(
                 {
-                    "domLayout": "autoHeight",
                     "defaultColDef": {"flex": 1},
                     "columnDefs": [
                         {"headerName": "Name", "field": "name", "sortable": True},
                         {"headerName": "Status", "field": "status", "sortable": True},
                     ],
                     "rowData": [],
-                }
-            )
+                },
+            ).classes("h-96")
             self.update_grid()
-
+            
             arm_positions = ["extended", "ready", "pick_center", "drop"]
             self.position_input = ui.input(
                 label="Enter Move Arm position:",
