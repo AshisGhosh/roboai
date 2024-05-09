@@ -75,6 +75,9 @@ class Task(ABC):
 
     def __str__(self) -> str:
         return f"{self.name}; Status: {self.status}"
+    
+    def __repr__(self) -> str:
+        return super().__repr__() + f" {self.name}; Status: {self.status}"
 
 
 class ActionClientTask(Task):
@@ -258,16 +261,17 @@ class PickTask(PlannerTask):
         self.update_status(TaskStatus.RUNNING)
 
         if self.current_state == "get_grasp":
-            self.task_manager.add_task(
+            task = self.task_manager.add_task(
                 GetGraspTask(
                     name=f"Get grasp for {self.object_name}",
                     goal_object=self.object_name,
                     action_client=self.task_manager.get_grasp_action_client,
                     task_vars=self.task_vars,
-                )
+                ),
+                after=self
             )
 
-            self.add_next_plan()
+            self.add_next_plan(after=task)
             self.update_status(TaskStatus.SUCCESS)
             return
 
@@ -278,19 +282,19 @@ class PickTask(PlannerTask):
             pre_grasp = copy.deepcopy(gripper_grasp)
             pre_grasp.pose.position.z += 0.2
 
-            self.task_manager.add_task_to_move_to_position(
-                pre_grasp, name="Move to pregrasp"
+            task = self.task_manager.add_task_to_move_to_position(
+                pre_grasp, name="Move to pregrasp", after=self
             )
-            self.task_manager.add_task_to_control_gripper("open", name="Open gripper")
-            self.task_manager.add_task_to_move_to_position(
-                gripper_grasp, name="Move to grasp"
+            task = self.task_manager.add_task_to_control_gripper("open", name="Open gripper", after=task)
+            task = self.task_manager.add_task_to_move_to_position(
+                gripper_grasp, name="Move to grasp", after=task
             )
-            self.task_manager.add_task_to_control_gripper("close", name="Close gripper")
-            self.task_manager.add_task_to_move_to_position(
-                pre_grasp, name="Move to pregrasp"
+            task = self.task_manager.add_task_to_control_gripper("close", name="Close gripper", after=task)
+            task = self.task_manager.add_task_to_move_to_position(
+                pre_grasp, name="Move to pregrasp", after=task
             )
 
-            self.add_next_plan()
+            self.add_next_plan(after=task)
             self.update_status(TaskStatus.SUCCESS)
             return
 
@@ -300,12 +304,13 @@ class PickTask(PlannerTask):
                     name="Move to ready",
                     goal="ready",
                     action_client=self.task_manager.move_arm_action_client,
-                )
+                ),
+                after=self
             )
             self.update_status(TaskStatus.SUCCESS)
             return
 
-    def add_next_plan(self):
+    def add_next_plan(self, after:Task = None) -> None:
         next_state = self.get_next_state()
         self.task_manager.add_task(
             PickTask(
@@ -314,7 +319,8 @@ class PickTask(PlannerTask):
                 task_vars=self.task_vars,
                 object_name=self.object_name,
                 current_state=next_state,
-            )
+            ),
+            after=after
         )
 
 
@@ -437,31 +443,33 @@ class TaskManager(Node):
         self.add_task_to_move_to_position(position)
 
     def add_task_to_move_to_position(
-        self, position: str | list[float] | PoseStamped, name: str = None
+        self, position: str | list[float] | PoseStamped, name: str = None, after:Task = None
     ) -> None:
         if name is None:
             name = f"Move to {position}"
-        self.add_task(
+        return self.add_task(
             MoveArmTask(
                 name=name,
                 goal=position,
                 action_client=self.move_arm_action_client,
-            )
+            ),
+            after=after
         )
 
     def add_control_gripper_task_click(self, event):
         position = self.gripper_position_input.value
         self.add_task_to_control_gripper(position)
 
-    def add_task_to_control_gripper(self, position: str, name=None) -> None:
+    def add_task_to_control_gripper(self, position: str, name=None, after:Task = None) -> None:
         if name is None:
             name = f"Control gripper to {position}"
-        self.add_task(
+        return self.add_task(
             ControlGripperTask(
                 name=f"Control gripper to {position}",
                 goal=position,
                 action_client=self.control_gripper_action_client,
-            )
+            ),
+            after=after
         )
 
     def add_move_arm_task_cartesian_click(self, event):
@@ -492,11 +500,20 @@ class TaskManager(Node):
         self.add_task_to_move_to_position(pre_grasp)
         self.add_task_to_move_to_position("ready")
 
-    def add_task(self, task: Task) -> None:
+    def add_task(self, task: Task, after:Task = None) -> None:
         task.logger = self.get_logger()
-        self.tasks.append(task)
+        if after:
+            if after in self.tasks:
+                self.tasks.insert(self.tasks.index(after) + 1, task)
+            elif after in self.task_history:
+                self.tasks.insert(0, task)
+            else:
+                self.get_logger().error(f"Task not found: {after}, cannot add task.")
+        else:
+            self.tasks.append(task)
         self.update_grid()
         self.get_logger().info(f"Task added: {task}")
+        return task
 
     def remove_task(self, task: Task) -> None:
         self.tasks.remove(task)
