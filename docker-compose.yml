@@ -1,162 +1,81 @@
-version: '3.8'
 services:
-  robosuite-simulation:
+  isaac-sim:
+      build:
+        context: .
+        dockerfile: ./isaac_sim/Dockerfile
+      volumes:
+        - /tmp/.X11-unix:/tmp/.X11-unix
+        - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
+        - ~/docker/isaac-sim/cache/kit:/isaac-sim/kit/cache:rw
+        - ~/docker/isaac-sim/cache/ov:/root/.cache/ov:rw
+        - ~/docker/isaac-sim/cache/pip:/root/.cache/pip:rw
+        - ~/docker/isaac-sim/cache/glcache:/root/.cache/nvidia/GLCache:rw
+        - ~/docker/isaac-sim/cache/computecache:/root/.nv/ComputeCache:rw
+        - ~/docker/isaac-sim/logs:/root/.nvidia-omniverse/logs:rw
+        - ~/docker/isaac-sim/data:/root/.local/share/ov/data:rw
+        - ~/docker/isaac-sim/documents:/root/Documents:rw
+        - ./isaac_sim/isaac_sim:/isaac-sim/roboai/
+        - ./shared:/isaac-sim/roboai/shared
+        - ./isaac_sim/humble_ws/src:/isaac-sim/humble_ws/src
+        - ./isaac_sim/bin:/isaac-sim/roboai/bin
+      environment:
+        - DISPLAY=${DISPLAY}
+        - XAUTHORITY=/root/.Xauthority
+        - ACCEPT_EULA=Y
+        - PRIVACY_CONSENT=Y
+        - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      entrypoint: /bin/bash -c "while true; do sleep 30; done"
+      network_mode: host
+      deploy:
+        resources:
+          reservations:
+            devices:
+              - driver: nvidia
+                count: 1
+                capabilities: [gpu]
+  franka:
+    image: franka_isaac_moveit_tutorial
     build:
-      context: ./robosuite/robosim
+      context: ./franka_moveit
+      dockerfile: Dockerfile
+    stdin_open: true
+    tty: true
+    network_mode: host
+    ipc: host
+    privileged: true
+    environment:
+      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
+      - DISPLAY=${DISPLAY}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority
+      - ./franka_moveit/config:/root/ws_moveit/src/moveit2_tutorials/doc/how_to_guides/isaac_panda/config
+    command: ros2 launch moveit2_tutorials isaac_demo.launch.py
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+    
+  grasp-server:
+    build:
+      context: ./grasping/grasp_server
       dockerfile: Dockerfile
     volumes:
-      - ./robosuite/robosim:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw 
-    environment:
-      - DISPLAY=${DISPLAY}
-      - MUJOCO_GL=osmesa
-      - XAUTHORITY=/root/.Xauthority  
-    # entrypoint: conda run -n robot_env 
-    # command: python -m robosuite.demos.demo_random_action
-    command: python -u -m robosim.quick_start
-    # command: /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
-    profiles: ["dev"]
-
-  robomimic-simulation:
-    build:
-      context: ./robomimic_sim
-      dockerfile: Dockerfile
-    volumes:
-      - ./robosuite/robomimic_sim:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-    environment:
-      - DISPLAY=${DISPLAY}
-      - MUJOCO_GL=osmesa
-      - XAUTHORITY=/root/.Xauthority
-    working_dir: /app
-    command: python -u robomimic_sim/run_policy.py
-    # command: /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
-  robomimic-server:
-    build:
-      context: ./robosuite/robomimic_sim
-      dockerfile: Dockerfile
-    volumes:
-      - ./robosuite/robomimic_sim:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-    environment:
-      - DISPLAY=${DISPLAY}
-      - MUJOCO_GL=osmesa
-      - XAUTHORITY=/root/.Xauthority
-    working_dir: /app
-    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000
-    # command: /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
-
-  robosim:
-    image: robo_ai-robomimic-simulation
-    build:
-      context: .
-      dockerfile: robosuite/robosim/Dockerfile
-    volumes:
-      - ./robosuite/robosim:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-      - ./shared:/app/shared
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    environment:
-      - DISPLAY=${DISPLAY}
-      - MUJOCO_GL=osmesa
-      - XAUTHORITY=/root/.Xauthority
-    command: python -u -m robosim.quick_start
-    network_mode: host
-
-  robosim-server:
-    image: robo_ai-robosuite-simulation
-    build:
-      context: .
-      dockerfile: robosuite/robosim/Dockerfile
-      args:
-        ENABLE_GPU: "no"
-    volumes:
-      - ./robosuite/robosim:/app
+      - ./grasping/grasp_server:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
       - ./shared:/app/shared
     environment:
       - DISPLAY=${DISPLAY}
-      - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
-    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    network_mode: host
-
-  robosim-server-gpu:
-    image: robo_ai-robosuite-simulation-gpu
-    build:
-      context: .
-      dockerfile: robosuite/robosim/Dockerfile.gpu
-      args:
-        ENABLE_GPU: "yes"
-    volumes:
-      - ./robosuite/robosim:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-      - ./shared:/app/shared
-      -  ./robosim/NVIDIA-OptiX-SDK-7.2.0-linux64-x86_64:/opt/NVIDIA-OptiX-SDK-7.2.0
-    environment:
-      - DISPLAY=${DISPLAY}
-      - MUJOCO_GL=EGL
-      - XAUTHORITY=/root/.Xauthority
-      - NVIDIA_DRIVER_CAPABILITIES=graphics,compute,utility
-      - OPTIX_INSTALL_DIR=/opt/NVIDIA-OptiX-SDK-7.2.0
-    # command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
-    command: /bin/bash -c "while true; do sleep 30; done"
+    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
     network_mode: host
     deploy:
       resources:
         reservations:
           devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-
-  autogen-roboai:
-    build:
-      context: ./agent_frameworks/autogen_roboai
-      dockerfile: Dockerfile
-    volumes:
-      - ./agent_frameworks/autogen_roboai:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-    environment:
-      - DISPLAY=${DISPLAY}
-      - MUJOCO_GL=osmesa
-      - XAUTHORITY=/root/.Xauthority
-    command: python -u -m autogen_roboai.test
-    # command:  /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
-
-  crewai-roboai:
-    build:
-      context: ./agent_frameworks/crewai_roboai
-      dockerfile: Dockerfile
-    volumes:
-      - ./agent_frameworks/crewai_roboai:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-    environment:
-      - DISPLAY=${DISPLAY}
-      - MUJOCO_GL=osmesa
-      - XAUTHORITY=/root/.Xauthority
-    command: python -u -m crewai_roboai.test
-    # command:  /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
-  
-  langroid-roboai:
-    build:
-      context: ./agent_frameworks/langroid_roboai
-      dockerfile: Dockerfile
-    volumes:
-      - ./agent_frameworks/langroid_roboai:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-    environment:
-      - DISPLAY=${DISPLAY}
-      - MUJOCO_GL=osmesa
-      - XAUTHORITY=/root/.Xauthority
-    command: python -u -m langroid_roboai.test
-    # command:  /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
+            - capabilities: [gpu]
 
   roboai:
     build:
@@ -170,166 +89,6 @@ services:
       - DISPLAY=${DISPLAY}
       - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
-    command: python -u -m roboai.roboai
-    # command:  /bin/bash -c "while true; do sleep 30; done"
+    command: python -u -m roboai.roboai_demo
     network_mode: host
-  
-  grasp-server:
-    build:
-      context: ./grasping/grasp_server
-      dockerfile: Dockerfile
-    volumes:
-      - ./grasping/grasp_server:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-      - ./shared:/app/shared
-    environment:
-      - DISPLAY=${DISPLAY}
-      - XAUTHORITY=/root/.Xauthority
-      # - QT_QPA_PLATFORM=xcb
-      # - QT_DEBUG_PLUGINS=1
-    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8005 --reload
-    # command: python -u -m grasp_server.grasp
-    # command:  /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
-  
-  robotic-grasping-server:
-    build:
-      context: ./grasping/robotic_grasping_server
-      dockerfile: Dockerfile
-    volumes:
-      - ./grasping/robotic_grasping_server:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-      - ./shared:/app/shared
-    environment:
-      - DISPLAY=${DISPLAY}
-      - XAUTHORITY=/root/.Xauthority
-    command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8003 --reload
-    # command: poetry run python -u -m robotic_grasping_server.robotic_grasping
-    # command:  /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
-
-  scale-grasp:
-    build:
-      context: ./grasping/scale_balanced_grasp
-      dockerfile: Dockerfile
-    volumes:
-      - ./grasping/scale_balanced_grasp:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-      - ./shared:/app/shared
-    environment:
-      - DISPLAY=${DISPLAY}
-      - XAUTHORITY=/root/.Xauthority
-    command: /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-          - driver: nvidia
-            count: 1  # Number of GPUs
-            capabilities: [gpu]
-
-  
-  ollama-server:
-    image: ollama/ollama:latest
-    volumes:
-      - ~/.cache/ollama:/root/.ollama
-    ports:
-      - 11434:11434
-
-  awq-model-server:
-    build:
-      context: .
-      dockerfile: ./awq_model_server/Dockerfile
-    volumes:
-      - ./awq_model_server:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-      - ./shared:/app/shared
-    environment:
-      - DISPLAY=${DISPLAY}
-      - XAUTHORITY=/root/.Xauthority
-    command:  /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
-
-  model-server:
-    build:
-      context: .
-      dockerfile: ./model_server/Dockerfile
-    volumes:
-      - ./model_server:/app
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-      - ./shared:/app/shared
-      - ~/.cache/huggingface:/root/.cache/huggingface
-    environment:
-      - DISPLAY=${DISPLAY}
-      - XAUTHORITY=/root/.Xauthority
-    # command:  /bin/bash -c "while true; do sleep 30; done"
-    command: poetry run python -u -m model_server.hf_moondream2
-    # command: poetry run uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
-    network_mode: host
-
-  isaac-sim:
-    # image: nvcr.io/nvidia/isaac-sim:2023.1.1
-    build:
-      context: .
-      dockerfile: ./isaac_sim/Dockerfile
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-      - ~/docker/isaac-sim/cache/kit:/isaac-sim/kit/cache:rw
-      - ~/docker/isaac-sim/cache/ov:/root/.cache/ov:rw
-      - ~/docker/isaac-sim/cache/pip:/root/.cache/pip:rw
-      - ~/docker/isaac-sim/cache/glcache:/root/.cache/nvidia/GLCache:rw
-      - ~/docker/isaac-sim/cache/computecache:/root/.nv/ComputeCache:rw
-      - ~/docker/isaac-sim/logs:/root/.nvidia-omniverse/logs:rw
-      - ~/docker/isaac-sim/data:/root/.local/share/ov/data:rw
-      - ~/docker/isaac-sim/documents:/root/Documents:rw
-      - ./isaac_sim/isaac_sim:/isaac-sim/roboai/
-      - ./shared:/isaac-sim/roboai/shared
-      - ./isaac_sim/humble_ws/src:/isaac-sim/humble_ws/src
-      - ./isaac_sim/bin:/isaac-sim/roboai/bin
-    environment:
-      - DISPLAY=${DISPLAY}
-      - XAUTHORITY=/root/.Xauthority
-      - ACCEPT_EULA=Y
-      - PRIVACY_CONSENT=Y
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-    entrypoint: /bin/bash -c "while true; do sleep 30; done"
-    network_mode: host
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-  
-  franka:
-    image: franka_isaac_moveit_tutorial
-    build:
-      context: ./franka_moveit
-      dockerfile: Dockerfile
-    # Interactive shell
-    stdin_open: true
-    tty: true
-    # Networking and IPC for ROS 2
-    network_mode: host
-    ipc: host
-    privileged: true
-    environment:
-      # Default the ROS_DOMAIN_ID to zero if not set on the host
-      - ROS_DOMAIN_ID=${ROS_DOMAIN_ID:-0}
-      # Allows graphical programs in the container
-      - DISPLAY=${DISPLAY}
-      - QT_X11_NO_MITSHM=1
-    volumes:
-      # Allows graphical programs in the container
-      - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - ${XAUTHORITY:-$HOME/.Xauthority}:/root/.Xauthority
-      - ./franka_moveit/config:/root/ws_moveit/src/moveit2_tutorials/doc/how_to_guides/isaac_panda/config
-    command: ros2 launch moveit2_tutorials isaac_demo.launch.py
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
+    

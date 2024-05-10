@@ -75,7 +75,7 @@ class Task(ABC):
 
     def __str__(self) -> str:
         return f"{self.name}; Status: {self.status}"
-    
+
     def __repr__(self) -> str:
         return super().__repr__() + f" {self.name}; Status: {self.status}"
 
@@ -268,7 +268,7 @@ class PickTask(PlannerTask):
                     action_client=self.task_manager.get_grasp_action_client,
                     task_vars=self.task_vars,
                 ),
-                after=self
+                after=self,
             )
 
             self.add_next_plan(after=task)
@@ -285,11 +285,15 @@ class PickTask(PlannerTask):
             task = self.task_manager.add_task_to_move_to_position(
                 pre_grasp, name="Move to pregrasp", after=self
             )
-            task = self.task_manager.add_task_to_control_gripper("open", name="Open gripper", after=task)
+            task = self.task_manager.add_task_to_control_gripper(
+                "open", name="Open gripper", after=task
+            )
             task = self.task_manager.add_task_to_move_to_position(
                 gripper_grasp, name="Move to grasp", after=task
             )
-            task = self.task_manager.add_task_to_control_gripper("close", name="Close gripper", after=task)
+            task = self.task_manager.add_task_to_control_gripper(
+                "close", name="Close gripper", after=task
+            )
             task = self.task_manager.add_task_to_move_to_position(
                 pre_grasp, name="Move to pregrasp", after=task
             )
@@ -305,12 +309,12 @@ class PickTask(PlannerTask):
                     goal="ready",
                     action_client=self.task_manager.move_arm_action_client,
                 ),
-                after=self
+                after=self,
             )
             self.update_status(TaskStatus.SUCCESS)
             return
 
-    def add_next_plan(self, after:Task = None) -> None:
+    def add_next_plan(self, after: Task = None) -> None:
         next_state = self.get_next_state()
         self.task_manager.add_task(
             PickTask(
@@ -320,7 +324,7 @@ class PickTask(PlannerTask):
                 object_name=self.object_name,
                 current_state=next_state,
             ),
-            after=after
+            after=after,
         )
 
 
@@ -384,7 +388,7 @@ class TaskManager(Node):
                 },
             ).classes("h-96")
             self.update_grid()
-            
+
             arm_positions = ["extended", "ready", "pick_center", "drop"]
             self.position_input = ui.input(
                 label="Enter Move Arm position:",
@@ -443,7 +447,10 @@ class TaskManager(Node):
         self.add_task_to_move_to_position(position)
 
     def add_task_to_move_to_position(
-        self, position: str | list[float] | PoseStamped, name: str = None, after:Task = None
+        self,
+        position: str | list[float] | PoseStamped,
+        name: str = None,
+        after: Task = None,
     ) -> None:
         if name is None:
             name = f"Move to {position}"
@@ -453,14 +460,16 @@ class TaskManager(Node):
                 goal=position,
                 action_client=self.move_arm_action_client,
             ),
-            after=after
+            after=after,
         )
 
     def add_control_gripper_task_click(self, event):
         position = self.gripper_position_input.value
         self.add_task_to_control_gripper(position)
 
-    def add_task_to_control_gripper(self, position: str, name=None, after:Task = None) -> None:
+    def add_task_to_control_gripper(
+        self, position: str, name=None, after: Task = None
+    ) -> None:
         if name is None:
             name = f"Control gripper to {position}"
         return self.add_task(
@@ -469,7 +478,7 @@ class TaskManager(Node):
                 goal=position,
                 action_client=self.control_gripper_action_client,
             ),
-            after=after
+            after=after,
         )
 
     def add_move_arm_task_cartesian_click(self, event):
@@ -500,7 +509,7 @@ class TaskManager(Node):
         self.add_task_to_move_to_position(pre_grasp)
         self.add_task_to_move_to_position("ready")
 
-    def add_task(self, task: Task, after:Task = None) -> None:
+    def add_task(self, task: Task, after: Task = None) -> None:
         task.logger = self.get_logger()
         if after:
             if after in self.tasks:

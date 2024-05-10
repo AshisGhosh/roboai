@@ -13,18 +13,14 @@ from roboai.task import Task
 #     place,
 #     get_image,
 #     get_grasp_image,
-# ) 
+# )
 
-from shared.utils.isaacsim_client import (
-    get_image, 
-    pick,
-    place
-)
+from shared.utils.isaacsim_client import get_image, pick, place
 
 from shared.utils.model_server_client import answer_question_from_image  # noqa: F401
 import shared.utils.gradio_client as gradio  # noqa: F401
 import shared.utils.replicate_client as replicate  # noqa: F401
-from shared.utils.llm_utils import get_closest_text_sync as get_closest_text 
+from shared.utils.llm_utils import get_closest_text_sync as get_closest_text
 
 import gradio as gr
 
@@ -61,6 +57,7 @@ def extract_code(raw_input, language="python"):
     log.debug(f"Extracted code: \n{code}")
     return code
 
+
 class RobotJob(ABC):
     def __init__(self):
         pass
@@ -68,6 +65,8 @@ class RobotJob(ABC):
     @abstractmethod
     def run(self):
         pass
+
+
 class ClearTableJob(RobotJob):
     def __init__(self):
         pass
@@ -92,13 +91,12 @@ class ClearTableJob(RobotJob):
         if chat_history:
             chat_history[-1][1] += "Asking VLA model...\n"
             yield chat_history
-        
+
         output = gradio.moondream_answer_question_from_image(im, prompt)["result"]
         if chat_history:
             chat_history[-1][1] += f"Response:\n{output}\n"
             yield chat_history
 
-        
         if chat_history:
             chat_history[-1][1] += "Creating plan...\n"
             yield chat_history
@@ -242,7 +240,7 @@ class ClearTableJob(RobotJob):
             code = extract_code(output)
 
             if chat_history:
-                chat_history[-1][1] += f"Response:\n```{code}```"
+                chat_history[-1][1] += f"Response:\n```{code}\n```"
                 yield chat_history
 
             try:
@@ -257,8 +255,10 @@ class ClearTableJob(RobotJob):
                     chat_history[-1][1] += f"\nResponse:\n**{result}**"
                     yield chat_history
 
+
 class WhatIsOnTableJob(RobotJob):
     image = None
+
     def __init__(self):
         self.image = get_image()
 
@@ -279,7 +279,7 @@ class WhatIsOnTableJob(RobotJob):
 
         im = get_image()
         prompt = "What objects are on the table?"
-        
+
         if chat_history:
             chat_history[-1][1] += "Asking VLA model...\n"
             yield chat_history
@@ -290,6 +290,7 @@ class WhatIsOnTableJob(RobotJob):
             yield chat_history
         return output["result"]
 
+
 class TestJob(RobotJob):
     def __init__(self):
         pass
@@ -298,7 +299,7 @@ class TestJob(RobotJob):
         responses = [
             "I am a robot.",
             "I can help you with tasks.",
-            "Ask me to do something"
+            "Ask me to do something",
         ]
         if chat_history:
             if not chat_history[-1][1]:
@@ -317,22 +318,21 @@ def chat():
         chatbot = gr.Chatbot(height=700)
         msg = gr.Textbox(placeholder="Ask me to do a task.", container=False, scale=7)
         image_output = gr.Image(label="Response Image")
-        clear = gr.ClearButton([msg, chatbot])
+        clear = gr.ClearButton([msg, chatbot])  # noqa: F841
         current_task = [None]
 
         def respond(message, chat_history):
             nonlocal current_task
-            closest_text = get_closest_text(message, ["Clear the table", "What is on the table?"])
-            response = None
+            closest_text = get_closest_text(
+                message, ["Clear the table", "What is on the table?"]
+            )
             image = None
             if closest_text:
                 print(f"Closest text: {closest_text}")
                 current_task[0] = closest_text
-                response = f"Doing task: {closest_text}"
-                # image = WhatIsOnTableJob().get_image()
             chat_history.append((message, None))
             return "", chat_history, image
-        
+
         def do_function(chat_history):
             nonlocal current_task
             if not current_task:
@@ -340,7 +340,7 @@ def chat():
 
             chat_history[-1][1] = f"**{current_task[0]}**"
             yield chat_history
-            
+
             if current_task[0] == "What is on the table?":
                 job = WhatIsOnTableJob()
                 image = job.get_image()
@@ -356,21 +356,19 @@ def chat():
                 chat_history[-1][1] = "Sorry, I don't understand that command."
                 image = None
 
-            return None, chat_history, image            
-        
+            return None, chat_history, image
+
         def get_image_output():
             image_output = WhatIsOnTableJob().get_image()
             return image_output
 
-        msg.submit(respond, [msg, chatbot], [msg, chatbot, image_output], queue=False).then(
-            get_image_output, [], [image_output]
-        ).then(
-            do_function, chatbot, chatbot
-        )
+        msg.submit(
+            respond, [msg, chatbot], [msg, chatbot, image_output], queue=False
+        ).then(get_image_output, [], [image_output]).then(do_function, chatbot, chatbot)
 
-    
     demo.queue()
     demo.launch()
+
 
 if __name__ == "__main__":
     chat()
