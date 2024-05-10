@@ -2,10 +2,10 @@ version: '3.8'
 services:
   robosuite-simulation:
     build:
-      context: ./robosim
+      context: ./robosuite/robosim
       dockerfile: Dockerfile
     volumes:
-      - ./robosim:/app
+      - ./robosuite/robosim:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw 
     environment:
       - DISPLAY=${DISPLAY}
@@ -23,7 +23,7 @@ services:
       context: ./robomimic_sim
       dockerfile: Dockerfile
     volumes:
-      - ./robomimic_sim:/app
+      - ./robosuite/robomimic_sim:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
     environment:
       - DISPLAY=${DISPLAY}
@@ -35,10 +35,10 @@ services:
     network_mode: host
   robomimic-server:
     build:
-      context: ./robomimic_sim
+      context: ./robosuite/robomimic_sim
       dockerfile: Dockerfile
     volumes:
-      - ./robomimic_sim:/app
+      - ./robosuite/robomimic_sim:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
     environment:
       - DISPLAY=${DISPLAY}
@@ -53,9 +53,9 @@ services:
     image: robo_ai-robomimic-simulation
     build:
       context: .
-      dockerfile: robosim/Dockerfile
+      dockerfile: robosuite/robosim/Dockerfile
     volumes:
-      - ./robosim:/app
+      - ./robosuite/robosim:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
       - ./shared:/app/shared
       - ~/.cache/huggingface:/root/.cache/huggingface
@@ -70,11 +70,11 @@ services:
     image: robo_ai-robosuite-simulation
     build:
       context: .
-      dockerfile: robosim/Dockerfile
+      dockerfile: robosuite/robosim/Dockerfile
       args:
         ENABLE_GPU: "no"
     volumes:
-      - ./robosim:/app
+      - ./robosuite/robosim:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
       - ./shared:/app/shared
     environment:
@@ -88,11 +88,11 @@ services:
     image: robo_ai-robosuite-simulation-gpu
     build:
       context: .
-      dockerfile: robosim/Dockerfile.gpu
+      dockerfile: robosuite/robosim/Dockerfile.gpu
       args:
         ENABLE_GPU: "yes"
     volumes:
-      - ./robosim:/app
+      - ./robosuite/robosim:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
       - ./shared:/app/shared
       -  ./robosim/NVIDIA-OptiX-SDK-7.2.0-linux64-x86_64:/opt/NVIDIA-OptiX-SDK-7.2.0
