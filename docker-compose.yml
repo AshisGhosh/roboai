@@ -89,6 +89,11 @@ services:
       - DISPLAY=${DISPLAY}
       - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
-    command: python -u -m roboai.roboai_demo
+    command: python -u -m roboai.roboai
     network_mode: host
+  
+  roboai-demo:
+    extends: roboai
+    command: python -u -m roboai.roboai_demo
+
     
