@@ -81,6 +81,11 @@ RUN echo "source ~/ws_moveit2/install/setup.bash" >> /root/.bashrc
 # TODO: debug why colcon build fails when git is installed (setuptools_scm issue)
 RUN apt-get remove git -y 
 
+RUN apt-get install  -y \
+        ros-$ROS_DISTRO-navigation2 \
+        ros-$ROS_DISTRO-nav2-bringup \
+        ros-$ROS_DISTRO-pointcloud-to-laserscan
+
 WORKDIR /isaac-sim
 
 RUN ./python.sh -m pip install nicegui
