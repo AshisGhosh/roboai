@@ -1,5 +1,3 @@
-import io
-import base64
 from typing import List, Optional, Tuple
 from PIL import Image
 
@@ -9,7 +7,7 @@ from burr.lifecycle import LifecycleAdapter
 from burr.tracking import LocalTrackingClient
 
 from shared.utils.llm_utils import get_closest_text_sync as get_closest_text
-from shared.utils.isaacsim_client import get_image as get_image_from_sim, pick, place
+from shared.utils.isaacsim_client import get_image as get_image_from_sim, pick, place  # noqa: F401
 from shared.utils.image_utils import pil_to_b64, b64_to_pil
 from shared.utils.gradio_client import moondream_answer_question_from_image as moondream
 
@@ -28,6 +26,24 @@ MODES = {
     "generate_code": "code",
     "unknown": "text",
 }
+
+DEFAULT_MODEL = "openrouter/huggingfaceh4/zephyr-7b-beta:free"
+# DEFAULT_MODEL = "ollama/llama3:latest"
+# DEFAULT_MODEL = "ollama/phi3"
+# CODING_MODEL = "ollama/codegemma:instruct"
+CODING_MODEL = DEFAULT_MODEL
+
+
+def pick_mock(object_name: str):
+    name = pick_mock.__name__
+    print(f"Called {name}  TEST MODE ENABLED")
+    return True
+
+
+def place_mock(object_name: str):
+    name = place_mock.__name__
+    print(f"Called {name}  TEST MODE ENABLED")
+    return True
 
 
 def extract_code(raw_input, language="python"):
@@ -161,7 +177,8 @@ def get_list_of_objects(state: State) -> Tuple[dict, State]:
     )
     analyzer_agent = Agent(
         name="Analyzer",
-        model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
+        # model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
+        model=DEFAULT_MODEL,
         system_message="""
         You are a helpful agent that concisely responds with only code.
         Use only the provided functions, do not add any extra code.
@@ -185,7 +202,13 @@ def get_list_of_objects(state: State) -> Tuple[dict, State]:
 @action(reads=["relevant_vars", "task", "prompt"], writes=["plan_prompt"])
 def create_plan_prompt(state: State) -> Tuple[dict, State]:
     if state["task"] == "Clear the table":
-        skills = ["pick", "place", "navigate to toilet", "navigate to kitchen", "call support"]
+        skills = [
+            "pick",
+            "place",
+            "navigate to toilet",
+            "navigate to kitchen",
+            "call support",
+        ]
         # relevant_skills = get_closest_text(state["task"], skills, k=2)
         # relevant_skills = ["pick", "place"]
         relevant_skills = None
@@ -232,7 +255,8 @@ def create_plan(state: State) -> Tuple[dict, State]:
 
     planner_agent = Agent(
         name="Planner",
-        model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
+        # model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
+        model=DEFAULT_MODEL,
         system_message="""
         You are a planner that breaks down tasks into steps for robots.
         Create a conscise set of steps that a robot can do.
@@ -271,7 +295,8 @@ def convert_plan_to_code(state: State) -> Tuple[dict, State]:
     )
     coder_agent = Agent(
         name="Coder",
-        model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
+        # model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
+        model=CODING_MODEL,
         system_message="""
         You are a coder that writes concise and exact code to execute the plan.
         Use only the provided functions. No additional imports.
@@ -290,9 +315,11 @@ def convert_plan_to_code(state: State) -> Tuple[dict, State]:
 def validate_code(state: State) -> Tuple[dict, State]:
     try:
         exec_vars = state["exec_vars"]
-        exec_vars = {
-            k: globals().get(v, None) for k, v in exec_vars.items()
-        }
+        exec_vars = {k: globals().get(v, None) for k, v in exec_vars.items()}
+        # convert to mock functions
+        for k, v in exec_vars.items():
+            if callable(v):
+                exec_vars[k] = globals()[f"{k}_mock"]
         exec_vars["test_mode"] = True
         exec(state["code"], exec_vars)
         execution = "SUCCESS"
@@ -306,7 +333,10 @@ def validate_code(state: State) -> Tuple[dict, State]:
 @action(reads=["code", "execution", "code_attempts"], writes=["code", "code_attempts"])
 def iterate_code(state: State) -> Tuple[dict, State]:
     coder_task = Task(
-        f"Given the following code and error, fix the code. Code: \n{state['code']} Error: \n{state['execution']}"
+        f"""Given the following error, fix the code. 
+        Error: \n{state['execution']}
+        Code: \n{state['code']} 
+        """
     )
     coder_task.register_tool(
         name="pick",
@@ -322,7 +352,7 @@ def iterate_code(state: State) -> Tuple[dict, State]:
     )
     coder_agent = Agent(
         name="Coder",
-        model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
+        model=CODING_MODEL,
         system_message="""
         You are a coder that writes concise and exact code to execute the plan.
         Use only the provided functions.
@@ -339,7 +369,7 @@ def iterate_code(state: State) -> Tuple[dict, State]:
 
 @action(reads=["code"], writes=["execution"])
 def execute_code(state: State) -> Tuple[dict, State]:
-    result = {"execution": "HI IM AN EXECUTION"}
+    result = {"execution": "Execution successful!"}
     return result, state.update(**result)
 
 
@@ -457,12 +487,9 @@ def base_application(
     # we're initializing above so we can load from this as well
     # we could also use `with_tracker("local", project=project_id, params={"storage_dir": storage_dir})`
     tracker = LocalTrackingClient(project=project_id, storage_dir=storage_dir)
-    # app_id="89dbcceb-05e2-4ab3-afee-2d5f2d627177"
-    # sequence_id=20
-    # persisted_state = tracker.load(partition_key=None,
-    #                                app_id=app_id, 
-    #                            )
-    # state_values = persisted_state['state'].get_all()
+    sequence_id = None
+    # app_id="ef38fc91-4941-4cbc-a068-9b939a1c9e95"
+    # sequence_id=24
     return (
         ApplicationBuilder()
         .with_actions(
@@ -542,7 +569,7 @@ def base_application(
         )
         .with_hooks(*hooks)
         .with_tracker(tracker)
-        .with_identifiers(app_id=app_id)
+        .with_identifiers(app_id=app_id, sequence_id=sequence_id)
         .build()
     )
 

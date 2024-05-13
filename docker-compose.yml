@@ -76,6 +76,13 @@ services:
         reservations:
           devices:
             - capabilities: [gpu]
+  
+  ollama-server:
+    image: ollama/ollama:latest
+    volumes:
+      - ~/.cache/ollama:/root/.ollama
+    ports:
+      - 11434:11434
 
   roboai:
     build:

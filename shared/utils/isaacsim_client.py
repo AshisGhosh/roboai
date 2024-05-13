@@ -31,8 +31,8 @@ def add_task(task: str):
 def add_test_mode(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
-        print("Test mode enabled")
         if globals().get("test_mode", False):
+            print("TEST MODE ENABLED")
             return True
         else:
             return func(*args, **kwargs)
@@ -40,14 +40,12 @@ def add_test_mode(func):
     return wrapper
 
 
-@add_test_mode
 def pick(object_name: str):
     print(f"picking {object_name}")
     task = {"task": "pick"}
     add_task(task)
 
 
-@add_test_mode
 def place(object_name: str):
     print(f"placing {object_name}")
     print("placing object")
