@@ -2,6 +2,8 @@ import asyncio
 from shared.utils.http_client import post_request, get_image_request
 import io
 from PIL import Image
+from functools import wraps
+
 
 SERVER_NAME = "http://localhost:8080"
 
@@ -26,12 +28,26 @@ def add_task(task: str):
     return asyncio.run(_add_task(task))
 
 
+def add_test_mode(func):
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        print("Test mode enabled")
+        if globals().get("test_mode", False):
+            return True
+        else:
+            return func(*args, **kwargs)
+
+    return wrapper
+
+
+@add_test_mode
 def pick(object_name: str):
     print(f"picking {object_name}")
     task = {"task": "pick"}
     add_task(task)
 
 
+@add_test_mode
 def place(object_name: str):
     print(f"placing {object_name}")
     print("placing object")

@@ -85,7 +85,7 @@ async def get_closest_text(
     closest_index = np.argmax(similarities)
     if similarities[closest_index] < threshold:
         log_info(f"Similarity below threshold: {similarities[closest_index]}")
-        return "None"
+        return None
     return text_list[closest_index]
 
 

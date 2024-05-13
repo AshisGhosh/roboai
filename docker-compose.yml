@@ -85,11 +85,14 @@ services:
       - ./roboai:/app
       - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
       - ./shared:/app/shared
+      - ~/.burr:/root/.burr
     environment:
       - DISPLAY=${DISPLAY}
       - MUJOCO_GL=osmesa
       - XAUTHORITY=/root/.Xauthority
-    command: python -u -m roboai.roboai
+    # command: python -u -m roboai.roboai
+    command: bash -c "python -m streamlit run roboai/streamlit_app.py --server.headless true --server.port=8501 --server.address=0.0.0.0 & burr --no-open"
+    # command: /bin/bash -c "while true; do sleep 30; done"
     network_mode: host
   
   roboai-demo:

@@ -110,6 +110,25 @@ class Task:
 
         return exec_vars
 
+    def get_exec_vars_serialized(self):
+        exec_vars = {}
+        for tool in self.tools:
+            exec_vars[tool.name] = tool.func.__name__
+
+        return exec_vars
+
+    def get_complete_prompt(self, agentid: int):
+        task_description = self.task_description
+        if self.expected_output_format:
+            task_description += f"""
+                        Ensure your output follows the following format strictly: \n{self.expected_output_format}"""
+        prompt = f"""
+            {task_description}
+            """
+        if self.tools:
+            prompt += self.generate_tool_prompt()
+        return prompt
+
     def run(self):
         task_description = self.task_description
         if self.expected_output_format:
