@@ -208,19 +208,28 @@ def create_plan_prompt(state: State) -> Tuple[dict, State]:
             {state["relevant_vars"]}
             Do not add any extra steps.
         """
-        closest_plan = get_closest_text(state["task"], PLANS)
-        if closest_plan:
-            plan_prompt += f"Here is a template to follow: {closest_plan}"
-            relevant_skills = get_closest_text(closest_plan, SKILLS, k=2)
-            if relevant_skills:
-                plan_prompt += (
-                    f"You can only use the following actions: {relevant_skills}"
-                )
     else:
         plan_prompt = "Unknown task"
     result = {"plan_prompt": plan_prompt}
     return result, state.update(**result)
 
+@action(reads=["task", "plan_prompt"], writes=["plan_prompt", "similar_plans"])
+def check_for_similar_plans(state: State) -> Tuple[dict, State]:
+    plan_prompt = state["plan_prompt"]
+    similar_plans = get_closest_text(state["task"], PLANS)
+    if similar_plans:
+        plan_prompt += f"Here is a template to follow: {similar_plans}"
+    result = {"plan_prompt": plan_prompt, "similar_plans": similar_plans}
+    return result, state.update(**result)
+
+@action(reads=["plan_prompt", "similar_plans"], writes=["plan_prompt", "relevant_skills"])
+def check_for_relevant_skills(state: State) -> Tuple[dict, State]:
+    plan_prompt = state["plan_prompt"]
+    relevant_skills = get_closest_text(state["similar_plans"], SKILLS, k=2)
+    if relevant_skills:
+        plan_prompt += f"You can only use the following actions: {relevant_skills}"
+    result = {"plan_prompt": plan_prompt, "relevant_skills": relevant_skills}
+    return result, state.update(**result)
 
 @action(reads=["plan_prompt"], writes=["plan"])
 def create_plan(state: State) -> Tuple[dict, State]:
@@ -253,7 +262,6 @@ def create_plan(state: State) -> Tuple[dict, State]:
 
     planner_agent = Agent(
         name="Planner",
-        # model="openrouter/huggingfaceh4/zephyr-7b-beta:free",
         model=DEFAULT_MODEL,
         system_message="""
         You are a planner that breaks down tasks into steps for robots.
@@ -500,6 +508,8 @@ def base_application(
             ask_vla=ask_vla,
             get_list_of_objects=get_list_of_objects,
             create_plan_prompt=create_plan_prompt,
+            check_for_similar_plans=check_for_similar_plans,
+            check_for_relevant_skills=check_for_relevant_skills,
             create_plan=create_plan,
             code=convert_plan_to_code,
             validate_code=validate_code,
@@ -529,7 +539,10 @@ def base_application(
                 "create_plan_prompt",
                 when(task_state="create_plan"),
             ),
-            ("create_plan_prompt", "create_plan", default),
+            ("create_plan_prompt", "check_for_similar_plans", default),
+            ("check_for_similar_plans", "create_plan", when(similar_plans=None)),
+            ("check_for_similar_plans", "check_for_relevant_skills", default),
+            ("check_for_relevant_skills", "create_plan", default),
             ("execute_state_machine", "code", when(task_state="code")),
             (
                 "execute_state_machine",
