@@ -20,6 +20,12 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("roboai")
 load_dotenv("shared/.env")
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Process image dir and compare LLM captions.")
+    parser.add_argument("dir_name", type=str, nargs="?", help="Name of the dir containing the dataset. If not specified, the script will use the 'latest' symlink.")
+    parser.add_argument("-m", "--model", type=str, default="llava:latest", nargs="?", help="Name of ollama model. Include tag; eg. 'moondream:v2'. (default: 'llava:latest')")
+    return parser.parse_args()
+
 def get_model_info(model_name):
     """combines data from ollama list and show calls to create detailed model info"""
     model_list_data = ollama.list()
@@ -71,7 +77,8 @@ def encode_image_to_base64(file_path):
 def get_caption_with_image(image_path, model_name, prompt):
     try:
         image_base64 = encode_image_to_base64(image_path)
-        response = ollama.generate(model=model_name, prompt=prompt, stream=False, images=[image_base64], format="json")
+        # response = ollama.generate(model=model_name, prompt=prompt, stream=False, images=[image_base64], format="json")
+        response = ollama.generate(model=model_name, prompt=prompt, stream=False, images=[image_base64])
         return response
     except ollama.ResponseError as e:
         logger.error(f"ollama Response Error: {e.error}")
@@ -173,19 +180,21 @@ def process_dir(dir_path, model_name, prompt):
 
     unload_model(model_name)
 
-    embed_model = TextEmbedding("mixedbread-ai/mxbai-embed-large-v1")
     scores = {}
-    for filename, response in responses.items():
-        if 'response' in response:
-            response_obj = json.loads(response['response'])
-            validation_obj = validation_data.get(filename, {})
+    if model_name != "moondream:v2":
+        embed_model = TextEmbedding("mixedbread-ai/mxbai-embed-large-v1")
+        for filename, response in responses.items():
+            if 'response' in response:
+                response_obj = json.loads(response['response'])
+                validation_obj = validation_data.get(filename, {})
 
-            response_names = response_obj['objects']['names']
-            response_count = response_obj['objects']['count']
-            gt_names = validation_obj['objects']['names']
-            gt_count = validation_obj['objects']['count']
+                response_names = response_obj['objects']['names']
+                response_count = response_obj['objects']['count']
+                gt_names = validation_obj['objects']['names']
+                gt_count = validation_obj['objects']['count']
 
-            scores[filename] = evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_count)
+                scores[filename] = evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_count)
+                
     return responses, sim_metadata, validation_data, scores
 
 def sort_objects_by_leftward_plane(objects, flip=False):
@@ -332,43 +341,46 @@ def evaluate_outputs(response_names, gt_names, embed_model, response_count, gt_c
     }
 
 def compute_aggregate_stats(scores):
-    # Collect scores for each metric
-    order_accuracy_scores = []
-    average_semantic_scores = []
-    count_accuracy_scores = []
-    overall_performance_scores = []
+    if scores:
+        # Collect scores for each metric
+        order_accuracy_scores = []
+        average_semantic_scores = []
+        count_accuracy_scores = []
+        overall_performance_scores = []
 
-    for filename, score_data in scores.items():
-        order_accuracy_scores.append(score_data["order_accuracy"]["normalized_kendall_tau"])
-        average_semantic_scores.append(score_data["sem_score_match_stats"]["mean"])
-        count_accuracy_scores.append(score_data["count_accuracy"])
-        overall_performance_scores.append(score_data["final_score"])
+        for filename, score_data in scores.items():
+            order_accuracy_scores.append(score_data["order_accuracy"]["normalized_kendall_tau"])
+            average_semantic_scores.append(score_data["sem_score_match_stats"]["mean"])
+            count_accuracy_scores.append(score_data["count_accuracy"])
+            overall_performance_scores.append(score_data["final_score"])
 
-    # Calculate statistics
-    def compute_statistics(data):
-        return {
-            "mean": np.mean(data),
-            "std": np.std(data),
-            "min": np.min(data),
-            "max": np.max(data),
-            "count": len(data)
+        # Calculate statistics
+        def compute_statistics(data):
+            return {
+                "mean": np.mean(data),
+                "std": np.std(data),
+                "min": np.min(data),
+                "max": np.max(data),
+                "count": len(data)
+            }
+
+        # Calculate overall statistics
+        order_accuracy_statistics = compute_statistics(order_accuracy_scores)
+        semantic_score_statistics = compute_statistics(average_semantic_scores)
+        count_accuracy_statistics = compute_statistics(count_accuracy_scores)
+        overall_performance_statistics = compute_statistics(overall_performance_scores)
+
+        # Store the overall statistics
+        aggregate_stats = {
+            "order_accuracy_score_stats": order_accuracy_statistics,
+            "matched_name_semantic_score_stats": semantic_score_statistics,
+            "count_accuracy_score_stats": count_accuracy_statistics,
+            "final_score_stats": overall_performance_statistics
         }
 
-    # Calculate overall statistics
-    order_accuracy_statistics = compute_statistics(order_accuracy_scores)
-    semantic_score_statistics = compute_statistics(average_semantic_scores)
-    count_accuracy_statistics = compute_statistics(count_accuracy_scores)
-    overall_performance_statistics = compute_statistics(overall_performance_scores)
-
-    # Store the overall statistics
-    aggregate_stats = {
-        "order_accuracy_score_stats": order_accuracy_statistics,
-        "matched_name_semantic_score_stats": semantic_score_statistics,
-        "count_accuracy_score_stats": count_accuracy_statistics,
-        "final_score_stats": overall_performance_statistics
-    }
-
-    return aggregate_stats
+        return aggregate_stats
+    else:
+        aggregate_stats = {}
 
 def compare_results(responses):
     # Placeholder for comparison logic
@@ -424,24 +436,25 @@ def generate_graphs(scores, graph_dir):
     
     # Extract data for histograms
     avg_sem_scores_for_histogram = [item['sem_score_match_stats']['mean'] for item in scores.values() if 'sem_score_match_stats' in item]
-    final_scores_for_histogram = [item['final_score'] for item in scores.values() if 'final_score' in item]
+    final_scores_for_histogram = [item['final_score'] for item in scores.values() if 'final_score' in item] 
 
     # Generate histograms
-    generate_histogram(
-        avg_sem_scores_for_histogram,
-        title='Matched Name Avg SemScores',
-        xlabel='SemScore',
-        ylabel='Frequency',
-        output_file=sem_scores_output_file
-    )
-
-    generate_histogram(
-        final_scores_for_histogram,
-        title='Final Scores',
-        xlabel='Score',
-        ylabel='Frequency',
-        output_file=final_scores_output_file
-    )
+    if avg_sem_scores_for_histogram:
+        generate_histogram(
+            avg_sem_scores_for_histogram,
+            title='Matched Name Avg SemScores',
+            xlabel='SemScore',
+            ylabel='Frequency',
+            output_file=sem_scores_output_file
+        )
+    if final_scores_for_histogram:
+        generate_histogram(
+            final_scores_for_histogram,
+            title='Final Scores',
+            xlabel='Score',
+            ylabel='Frequency',
+            output_file=final_scores_output_file
+        )
 
 def html_from_output_json(json_file_path, html_output_path):
     try:
@@ -625,24 +638,23 @@ def html_from_output_json(json_file_path, html_output_path):
         print(f"An error occurred while generating HTML: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Process image dir and compare LLM captions.")
-    parser.add_argument("dir_name", nargs="?", help="Name of the dir containing the dataset. If not specified, the script will use the 'latest' symlink.")
-    args = parser.parse_args()
+    args = parse_arguments()
 
-    model_name = "llava:13b"
-    prompt = """How many objects are on the table? What are the objects? Order the objects as they appear from left to right.
+    model_name = args.model
+    prompt = "Name all the objects on the table in order from left to right as a list of strings."
+#     prompt = """How many objects are on the table? What are the objects? Order the objects as they appear from left to right.
     
-Respond using JSON. Follow the pattern: 
-{
-    "objects": {
-        "count": <number_of_objects>,
-        "names": [
-            "first object from left",
-            "next object from left", 
-            "last object from left"
-        ]
-    }
-}"""
+# Respond using JSON. Follow the pattern: 
+# {
+#     "objects": {
+#         "count": <number_of_objects>,
+#         "names": [
+#             "first object from left",
+#             "next object from left", 
+#             "last object from left"
+#         ]
+#     }
+# }"""
 
     latest_symlink_path = "/app/shared/data/image_exports/latest"
     dir_path = get_dir_path(latest_symlink_path, args.dir_name)
