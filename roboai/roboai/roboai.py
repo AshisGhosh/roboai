@@ -13,6 +13,8 @@ from shared.utils.gradio_client import moondream_answer_question_from_image as m
 
 from task import Task
 from agent import Agent
+from plans import PLANS
+from skills import SKILLS
 
 import logging
 
@@ -202,22 +204,18 @@ def get_list_of_objects(state: State) -> Tuple[dict, State]:
 @action(reads=["relevant_vars", "task", "prompt"], writes=["plan_prompt"])
 def create_plan_prompt(state: State) -> Tuple[dict, State]:
     if state["task"] == "Clear the table":
-        skills = [
-            "pick",
-            "place",
-            "navigate to toilet",
-            "navigate to kitchen",
-            "call support",
-        ]
-        # relevant_skills = get_closest_text(state["task"], skills, k=2)
-        # relevant_skills = ["pick", "place"]
-        relevant_skills = None
         plan_prompt = f"""Create a plan for a robot to {state["task"]}:
             {state["relevant_vars"]}
             Do not add any extra steps.
         """
-        if relevant_skills:
-            plan_prompt += f"You can only use the following actions: {relevant_skills}"
+        closest_plan = get_closest_text(state["task"], PLANS)
+        if closest_plan:
+            plan_prompt += f"Here is a template to follow: {closest_plan}"
+            relevant_skills = get_closest_text(closest_plan, SKILLS, k=2)
+            if relevant_skills:
+                plan_prompt += (
+                    f"You can only use the following actions: {relevant_skills}"
+                )
     else:
         plan_prompt = "Unknown task"
     result = {"plan_prompt": plan_prompt}

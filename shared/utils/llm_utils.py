@@ -81,11 +81,13 @@ async def get_closest_text(
     log_debug(f"Similarities: {similarities}")
     if k > 1:
         closest_indices = np.argsort(similarities)[-k:]
+        log_info(f"Closest texts: {[text_list[i] for i in closest_indices]}")
         return [text_list[i] for i in closest_indices]
     closest_index = np.argmax(similarities)
     if similarities[closest_index] < threshold:
         log_info(f"Similarity below threshold: {similarities[closest_index]}")
         return None
+    log_info(f"Closest text: {text_list[closest_index]}")
     return text_list[closest_index]
 
 
