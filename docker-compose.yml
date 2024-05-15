@@ -82,25 +82,8 @@ services:
     volumes:
       - ~/.cache/ollama:/root/.ollama
     ports:
-      - 11434:11434
+      - 11434:11434    
 
-  minedojo:
-    build: 
-      context: ./minedojo_sim
-      dockerfile: Dockerfile
-    volumes:
-      - /run/user/1000/gdm/Xauthority:/root/.Xauthority:rw
-    environment:
-      - DISPLAY=${DISPLAY}
-      - XAUTHORITY=/root/.Xauthority
-    ports:
-      - 8000:8000
-    command: /bin/bash -c "while true; do sleep 30; done"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - capabilities: [gpu]
   roboai:
     build:
       context: .
