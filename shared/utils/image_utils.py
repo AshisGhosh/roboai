@@ -8,7 +8,7 @@ def pil_to_b64(image: Image) -> str:
     # Save the image to a bytes buffer
     buffer = io.BytesIO()
     image.save(
-        buffer, format="JPEG"
+        buffer, format=image.format
     )  # You can change the format to PNG or other supported formats
 
     # Encode the buffer to base64
