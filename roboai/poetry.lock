@@ -233,13 +233,13 @@ files = [
 
 [[package]]
 name = "burr"
-version = "0.15.1"
+version = "0.18.0"
 description = "A state machine for data projects"
 optional = false
 python-versions = ">=3.9"
 files = [
-    {file = "burr-0.15.1-py3-none-any.whl", hash = "sha256:ee48a6125643a4bb3f091a72760a8cefaf5e49be64b7588c9c1e3b6670a28ad3"},
-    {file = "burr-0.15.1.tar.gz", hash = "sha256:23f2bcc7bb04601de592eda1c6b816d04d33eb378076c28af6a31b1c0e81c97c"},
+    {file = "burr-0.18.0-py3-none-any.whl", hash = "sha256:d350c7fc0f3d49ba0c6268658ff030fedca3efdd7fc52ff049dca1a3798a5829"},
+    {file = "burr-0.18.0.tar.gz", hash = "sha256:21e0e02efbe24b4571788138497a3093fcbb2854d6f9c74dd11be0dfa1c991ba"},
 ]
 
 [package.dependencies]
@@ -3479,4 +3479,4 @@ testing = ["big-O", "jaraco.functools", "jaraco.itertools", "more-itertools", "p
 [metadata]
 lock-version = "2.0"
 python-versions = "^3.10"
-content-hash = "a54d81ab76ada280a071b2efea8e0c08ea585e910a53abe3be5f503d29d4665f"
+content-hash = "8add870fc2af87f8b1df588cd5421fdc3d7f5990d4ce3ba3b4bdc4276eaed431"
