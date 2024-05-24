@@ -20,12 +20,12 @@ scene:
   default_erosion_radius: 0.0
   trav_map_with_objects: true
   num_waypoints: 1
-  waypoint_resolution: 0.2
+  waypoint_resolution: 0.1
   load_object_categories: null
   not_load_object_categories: null
   load_room_types: null
   load_room_instances: null
-  load_task_relevant_only: false
+  load_task_relevant_only: true
   seg_map_resolution: 0.1
   scene_source: OG
   include_robots: false
@@ -40,30 +40,16 @@ robots:
     grasping_mode: physical
     rigid_trunk: false
     default_trunk_offset: 0.365
-    default_arm_pose: diagonal30
+    default_arm_pose: horizontal
     controller_config:
       base:
         name: JointController
       arm_left:
         name: JointController
         use_delta_commands: true
-        # name: InverseKinematicsController
-        # command_input_limits: default
-        # command_output_limits:
-        #   - [-0.2, -0.2, -0.2, -0.5, -0.5, -0.5]
-        #   - [0.2, 0.2, 0.2, 0.5, 0.5, 0.5]
-        # mode: pose_absolute_ori
-        # kp: 300.0
       arm_right:
         name: JointController
         use_delta_commands: true
-        # name: InverseKinematicsController
-        # command_input_limits: default
-        # command_output_limits:
-        #   - [-0.2, -0.2, -0.2, -0.5, -0.5, -0.5]
-        #   - [0.2, 0.2, 0.2, 0.5, 0.5, 0.5]
-        # mode: pose_absolute_ori
-        # kp: 300.0
       gripper_left:
         name: JointController
         motor_type: position
@@ -89,6 +75,19 @@ objects: []
 
 task:
   type: DummyTask
+# task:  
+#   type: BehaviorTask
+#   activity_name: putting_away_Halloween_decorations
+#   activity_definition_id: 0
+#   activity_instance_id: 0
+#   predefined_problem: null
+#   online_object_sampling: false
+#   debug_object_sampling: null
+#   highlight_task_relevant_objects: false
+#   termination_config:
+#     max_steps: 500
+#   reward_config:
+#     r_potential: 1.0
 
 scene_graph:
   egocentric: true

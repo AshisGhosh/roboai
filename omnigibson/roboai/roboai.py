@@ -101,6 +101,19 @@ class ActionHandler:
             obj_name = args[0]
             obj = self.scene.object_registry("name", obj_name)
             self.controller._tracking_object = obj
+            pose = args[1]
+            pose = [float(p) for p in pose.split(" ")]
+            print(f"navigating to object {obj.name}")
+            self.execute_controller(
+                self.controller.apply_ref(
+                   "navigate_to_pose", pose, attempts=10
+                )
+            )
+        elif action == "navigate_to_object":
+            print(f"Attempting: 'navigate_to_object' with args: {args}")
+            obj_name = args[0]
+            obj = self.scene.object_registry("name", obj_name)
+            self.controller._tracking_object = obj
             print(f"navigating to object {obj.name}")
             self.execute_controller(
                 self.controller.apply_ref(
@@ -302,6 +315,7 @@ class SimWrapper:
 
         # controller = StarterSemanticActionPrimitives(env, enable_head_tracking=False)
         controller = SymbolicSemanticActionPrimitives(env)
+        controller.controller_functions["navigate_to_pose"] = controller._navigate_to_pose
 
         action_handler = ActionHandler(
             env, controller, scene, task_queue=self.task_queue
@@ -363,8 +377,8 @@ app.add_middleware(
 )
 
 task_queue = multiprocessing.Queue()
-image_queue = multiprocessing.Queue(1)
-scene_graph_queue = multiprocessing.Queue(1)
+image_queue = multiprocessing.Queue(maxsize=1)
+scene_graph_queue = multiprocessing.Queue(maxsize=1)
 sim = multiprocessing.Process(target=SimWrapper, args=(task_queue, image_queue, scene_graph_queue))
 
 
@@ -379,6 +393,8 @@ async def add_action(action: str):
 
 @app.get("/get_image")
 async def get_image():
+    image = image_queue.get()
+    await asyncio.sleep(2) # wait for the image to be updated
     image = image_queue.get()
     # img_array = np.frombuffer(image.data, np.uint8).reshape(
     #     image.height, image.width, 3
