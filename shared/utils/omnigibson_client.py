@@ -7,7 +7,7 @@ SERVER_NAME = "http://localhost:8000"
 
 
 async def _get_image() -> Image:
-    img_data = await get_image_request(f"{SERVER_NAME}/get_image")
+    img_data = await get_image_request(f"{SERVER_NAME}/get_image", timeout=30)
     return Image.open(io.BytesIO(img_data))
 
 def get_image():
@@ -34,7 +34,11 @@ def place(location: str):
     action = {"action": f"place,{location}"}
     add_action(action)
 
-def navigate_to(location: str):
-    print(f"navigating to {location}")
-    action = {"action": f"navigate_to,{location}"}
+def navigate_to(object_name: str, location: str = None):
+    print(f"navigating to {object_name}, {location}")
+    if location:
+        action = {"action": f"navigate_to,{object_name},{location}"}
+    else:
+        action = {"action": f"navigate_to_object,{location}"}
+
     add_action(action)

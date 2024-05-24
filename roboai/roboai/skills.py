@@ -6,5 +6,6 @@ SKILLS = [
     "navigate to toilet",
     "navigate to kitchen",
     "call support",
-    "update plan"
+    "update plan",
+    "rollout pick and place plan"
 ]

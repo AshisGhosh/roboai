@@ -31,9 +31,9 @@ MODES = {
     "unknown": "text",
 }
 
-# DEFAULT_MODEL = "openrouter/meta-llama/llama-3-8b-instruct:free"
+DEFAULT_MODEL = "openrouter/meta-llama/llama-3-8b-instruct:free"
 # DEFAULT_MODEL = "openrouter/huggingfaceh4/zephyr-7b-beta:free"
-DEFAULT_MODEL = "ollama/llama3:latest"
+# DEFAULT_MODEL = "ollama/llama3:latest"
 # DEFAULT_MODEL = "ollama/phi3"
 # CODING_MODEL = "ollama/codegemma:instruct"
 CODING_MODEL = DEFAULT_MODEL
@@ -263,46 +263,52 @@ def create_state_machine(state: State) -> Tuple[dict, State]:
         }
     else:
         plan = state["task"]
-        create_sm_task = Task(
-            f"Given the following plan, extract the robot actions and return them as a list assigned to `state_machine` in python: \n{plan}" +
-                f"\n\nHere is the list of available robot skills: {SKILLS}",
-            expected_output_format="""
-            ```python
-                state_machine = ["get image", "get information about the scene", "pick object"]
-            ```
-            """,
-        )
-        create_sm_agent = Agent(
-            name="State Machine Creator",
-            model=DEFAULT_MODEL,
-            system_message="""
-            You are a helpful agent that concisely responds with only code.
-            Use only the provided functions, do not add any extra code.
-            """,
-        )
-        create_sm_task.add_solving_agent(create_sm_agent)
-        output = create_sm_task.run()
-        code = extract_code(output)
-        try:
-            exec_vars = {}
-            exec(code, exec_vars)
-            log.info(exec_vars.get("state_machine", None))
-            state_machine = exec_vars.get("state_machine", None)
-            state_machine = [get_closest_text(s, SKILLS) for s in state_machine]
-            # assert len(plan) == len(state_machine), "Number of steps do not match the plan" 
-            result = {
-                "state_machine": state_machine,
-                "task_state": "output_state_machine",
-                "current_state": "RUNNING",
-            }
+        # create_sm_task = Task(
+        #     f"Given the following plan, extract the robot actions and return them as a list assigned to `state_machine` in python: \n{plan}" +
+        #         f"\n\nHere is the list of available robot skills: {SKILLS}",
+        #     expected_output_format="""
+        #     ```python
+        #         state_machine = ["get image", "get information about the scene", "pick object"]
+        #     ```
+        #     """,
+        # )
+        # create_sm_agent = Agent(
+        #     name="State Machine Creator",
+        #     model=DEFAULT_MODEL,
+        #     system_message="""
+        #     You are a helpful agent that concisely responds with only code.
+        #     Use only the provided functions, do not add any extra code.
+        #     """,
+        # )
+        # create_sm_task.add_solving_agent(create_sm_agent)
+        # output = create_sm_task.run()
+        # code = extract_code(output)
+        # try:
+        #     exec_vars = {}
+        #     exec(code, exec_vars)
+        #     log.info(exec_vars.get("state_machine", None))
+        #     state_machine = exec_vars.get("state_machine", None)
+        #     state_machine = [get_closest_text(s, SKILLS) for s in state_machine]
+        #     # assert len(plan) == len(state_machine), "Number of steps do not match the plan" 
+        #     result = {
+        #         "state_machine": state_machine,
+        #         "task_state": "output_state_machine",
+        #         "current_state": "RUNNING",
+        #     }
             
-        except Exception as e:
-            log.error(f"Error executing code: {e}")
-            result = {
-                "state_machine": "unknown",
-                "task_state": "unknown",
-                "current_state": "DONE",
-            }
+        # except Exception as e:
+        #     log.error(f"Error executing code: {e}")
+        #     result = {
+        #         "state_machine": "unknown",
+        #         "task_state": "unknown",
+        #         "current_state": "DONE",
+        #     }
+        state_machine = [get_list_of_objects(step) for step in plan]
+        result = {
+            "state_machine": state_machine,
+            "task_state": "output_state_machine",
+            "current_state": "RUNNING",
+        }
         result["task_state_idx"] = 0
     return result, state.update(**result)
 
@@ -377,8 +383,8 @@ def navigate_to_location(state: State) -> Tuple[dict, State]:
         result = {"location": None}
     
     location = get_closest_text(location, list(SEMANTIC_LOCATIONS.keys()))
-    result = {"location": location}
-    navigate_to(SEMANTIC_LOCATIONS[location])
+    result = {"location": {location}}
+    navigate_to(SEMANTIC_LOCATIONS[location]["name"], SEMANTIC_LOCATIONS[location]["location"])
 
     return result, state.update(**result)
 
@@ -835,8 +841,8 @@ def base_application(
             resume_at_next_action=True,  # always resume from entrypoint in the case of failure
             default_state={"chat_history": [], "current_state": "PENDING"},
             default_entrypoint="prompt",
-            fork_from_app_id="000431d2-949d-49ea-b440-302bdb1c6a9d",
-            fork_from_sequence_id=12,
+            # fork_from_app_id="000431d2-949d-49ea-b440-302bdb1c6a9d",
+            # fork_from_sequence_id=12,
         )
         .with_hooks(*hooks)
         .with_tracker(tracker)

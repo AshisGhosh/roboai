@@ -25,7 +25,35 @@ CLEAN_BATHROOM_PLAN = {
     }
 
 
+MOVE_OBJECTS_PLAN = {
+    "move objects":
+        """
+        Requires an origin, a destination, and a list of objects to move
+        1. Navigate to the origin and scan for objects
+        2. ROLLOUT plan to move objects to the destination
+        
+        """
+    }
+
+ROLLOUT_PICK_AND_PLACE_PLAN = {
+    "rollout pick and place":
+        """
+        Given a list of objects, an origin, and a destination
+        1. Navigate to the origin
+        2. Pick up object 1
+        3. Navigate to the destination
+        4. Place object 1
+        5. Navigate to the origin
+        6. Pick up object 2
+        7. Navigate to the destination
+        8. Place object 2
+        
+        """
+    }
+
+
 PLANS = {
     **CLEAR_TABLE_PLAN,
     **CLEAN_BATHROOM_PLAN,
+    **MOVE_OBJECTS_PLAN
 }

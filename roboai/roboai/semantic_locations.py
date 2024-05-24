@@ -1,9 +1,15 @@
 COFFEE_TABLE = {
-    "coffee_table": "coffee_table_fqluyq_0"
+    "coffee_table": {
+        "name": "coffee_table_fqluyq_0",
+        "location": "0.75 -1.1 3.14",
+    }
 }
 
 TABLE = {
-    "table": "table"
+    "table": {
+        "name": "table",
+        "location": None,
+    }
 }
 
 
