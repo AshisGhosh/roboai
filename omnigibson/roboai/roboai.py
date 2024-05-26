@@ -3,20 +3,21 @@ import yaml
 import numpy as np
 import asyncio
 import multiprocessing
+import time
 
 import omnigibson as og
 from omnigibson.macros import gm  # noqa F401
-from omnigibson.action_primitives.starter_semantic_action_primitives import (
+from omnigibson.action_primitives.starter_semantic_action_primitives import (  # noqa F401
     StarterSemanticActionPrimitives,
     StarterSemanticActionPrimitiveSet,
-)  # noqa F401
+)
 from omnigibson.action_primitives.symbolic_semantic_action_primitives import (
     SymbolicSemanticActionPrimitives,
     SymbolicSemanticActionPrimitiveSet,
 )
 from omnigibson.robots import Tiago
-from omnigibson.utils.asset_utils import get_og_scene_path
-from .visualize_scene_graph import visualize_scene_graph, visualize_ascii_scene_graph
+from .visualize_scene_graph import visualize_scene_graph, visualize_ascii_scene_graph  # noqa F401
+from .primitive_patches import _quick_settle_robot, _simplified_place_with_predicate
 
 
 from fastapi import FastAPI
@@ -47,9 +48,6 @@ class ActionHandler:
     def execute_controller(self, ctrl_gen):
         robot = self.env.robots[0]
         for action in ctrl_gen:
-            # target_obj_pose = self.controller._tracking_object.get_position_orientation()
-            # print(f"current: {robot.get_joint_positions()[robot.camera_control_idx]}, desired: {self.controller._get_head_goal_q(target_obj_pose)}")
-            # print(f"{action} - camera action: {action[robot.controller_action_idx['camera']]}")
             state, reward, done, info = self.env.step(action)
             self._last_camera_action = action[robot.controller_action_idx["camera"]]
 
@@ -64,38 +62,47 @@ class ActionHandler:
             print(f"Attempting: 'pick' with args: {args}")
             obj_name = args[0]
             grasp_obj = self.scene.object_registry("name", obj_name)
-            print(f"navigating to object {grasp_obj.name}")
+            # grasp_obj.disable_gravity()
+            # print(f"navigating to object {grasp_obj.name}")
             self.controller._tracking_object = grasp_obj
-            self.execute_controller(
-                self.controller.apply_ref(
-                    SymbolicSemanticActionPrimitiveSet.NAVIGATE_TO,
-                    grasp_obj,
-                    attempts=10,
-                )
-            )
+            # self.execute_controller(
+            #     self.controller.apply_ref(
+            #         SymbolicSemanticActionPrimitiveSet.NAVIGATE_TO,
+            #         grasp_obj,
+            #         attempts=10,
+            #     )
+            # )
             print(f"grasping object {grasp_obj.name}")
             self.execute_controller(
                 self.controller.apply_ref(
                     SymbolicSemanticActionPrimitiveSet.GRASP, grasp_obj
                 )
             )
+            print("Finished executing pick")
         elif action == "place":
             print(f"Attempting: 'place' with args: {args}")
             obj_name = args[0]
-            table = self.scene.object_registry("name", obj_name)
-            print(f"navigating to object {table.name}")
-            self.controller._tracking_object = table
+            if obj_name in ["None", "", None]:
+                obj_name = "table"
+                print(f"no object specified, defaulting to {obj_name}")
+
+            destination = self.scene.object_registry("name", obj_name)
+            # print(f"navigating to object {destination.name}")
+            self.controller._tracking_object = destination
+            # self.execute_controller(
+            #     self.controller.apply_ref(
+            #         SymbolicSemanticActionPrimitiveSet.NAVIGATE_TO, destination, attempts=10
+            #     )
+            # )
+            print(f"placing object on top of {destination.name}")
             self.execute_controller(
                 self.controller.apply_ref(
-                    SymbolicSemanticActionPrimitiveSet.NAVIGATE_TO, table, attempts=10
+                    SymbolicSemanticActionPrimitiveSet.PLACE_ON_TOP,
+                    destination,
+                    attempts=1,
                 )
             )
-            print(f"placing object on top of {table.name}")
-            self.execute_controller(
-                self.controller.apply_ref(
-                    SymbolicSemanticActionPrimitiveSet.PLACE_ON_TOP, table
-                )
-            )
+            print("Finished executing place")
         elif action == "navigate_to":
             print(f"Attempting: 'navigate_to' with args: {args}")
             obj_name = args[0]
@@ -105,10 +112,9 @@ class ActionHandler:
             pose = [float(p) for p in pose.split(" ")]
             print(f"navigating to object {obj.name}")
             self.execute_controller(
-                self.controller.apply_ref(
-                   "navigate_to_pose", pose, attempts=10
-                )
+                self.controller.apply_ref("navigate_to_pose", pose, attempts=10)
             )
+            print("Finished executing navigate_to")
         elif action == "navigate_to_object":
             print(f"Attempting: 'navigate_to_object' with args: {args}")
             obj_name = args[0]
@@ -120,10 +126,11 @@ class ActionHandler:
                     SymbolicSemanticActionPrimitiveSet.NAVIGATE_TO, obj, attempts=10
                 )
             )
+            print("Finished executing navigate_to_object")
 
         elif action == "pick_test":
             print("Executing pick")
-            grasp_obj = self.scene.object_registry("name", "cologne")
+            grasp_obj = self.scene.object_registry("name", "black_cologne_bottle")
             print(f"navigating to object {grasp_obj.name}")
             self.controller._tracking_object = grasp_obj
             self.execute_controller(
@@ -170,11 +177,11 @@ class ActionHandler:
                 )
             )
             print("Finished executing navigate_to_coffee_table")
-        
+
         elif action == "viz":
             print("Visualizing scene graph")
             graph = self.env.get_scene_graph()
-            print (graph)
+            print(graph)
             visualize_ascii_scene_graph(self.scene, graph)
             # visualize_scene_graph(self.scene, graph)
             print("Finished visualizing scene graph")
@@ -200,10 +207,12 @@ class ActionHandler:
 
 
 class SimWrapper:
-    def __init__(self, task_queue, image_queue, scene_graph_queue):
+    def __init__(self, task_queue, image_queue, obj_in_hand_queue, ready_queue):
         self.task_queue = task_queue
         self.image_queue = image_queue
-        self.scene_graph_queue = scene_graph_queue
+        self.obj_in_hand_queue = obj_in_hand_queue
+        self.ready_queue = ready_queue
+
         asyncio.run(self.run())
 
     async def run(self):
@@ -229,7 +238,12 @@ class SimWrapper:
 
         # Update it to create a custom environment and run some actions
         # config["scene"]["scene_model"] = "Rs_int"
-        config["scene"]["load_object_categories"] = ["floors", "ceilings", "walls", "coffee_table"]
+        config["scene"]["load_object_categories"] = [
+            "floors",
+            "ceilings",
+            "walls",
+            "coffee_table",
+        ]
 
         # # SHOW TRAVERSABLE AREA
         # import matplotlib.pyplot as plt
@@ -249,11 +263,11 @@ class SimWrapper:
         # plt.show()
 
         config["scene"]["not_load_object_categories"] = ["ceilings"]
-        
+
         config["objects"] = [
             {
                 "type": "DatasetObject",
-                "name": "cologne",
+                "name": "black_cologne_bottle",
                 "category": "bottle_of_cologne",
                 "model": "lyipur",
                 "position": [-0.3, -0.8, 0.5],
@@ -269,7 +283,7 @@ class SimWrapper:
             },
             {
                 "type": "DatasetObject",
-                "name": "cleaner",
+                "name": "cleaner_bottle",
                 "category": "bottle_of_cleaner",
                 "model": "svzbeq",
                 "position": [-0.5, -0.8, 0.6],
@@ -314,15 +328,19 @@ class SimWrapper:
         )
 
         # controller = StarterSemanticActionPrimitives(env, enable_head_tracking=False)
+        SymbolicSemanticActionPrimitives._place_with_predicate = (
+            _simplified_place_with_predicate
+        )
+        SymbolicSemanticActionPrimitives._settle_robot = _quick_settle_robot
         controller = SymbolicSemanticActionPrimitives(env)
-        controller.controller_functions["navigate_to_pose"] = controller._navigate_to_pose
+        controller.controller_functions["navigate_to_pose"] = (
+            controller._navigate_to_pose
+        )
 
+        # Task queue
         action_handler = ActionHandler(
             env, controller, scene, task_queue=self.task_queue
         )
-        # visualize_scene_graph(scene, env.get_scene_graph())
-        # graph = env.get_scene_graph()
-        # print (graph)
 
         if False:
             print("\n\n####### TASK DATA #######\n")
@@ -332,19 +350,40 @@ class SimWrapper:
             agent_pos = task_obs["agent.n.01_1_pos"]
             print(task_obs)
             print(env.task.object_scope)
-            for k,v in env.task.object_scope.items():
-                dist = np.linalg.norm(np.array(task_obs[f"{k}_pos"]) - np.array(agent_pos))
+            for k, v in env.task.object_scope.items():
+                dist = np.linalg.norm(
+                    np.array(task_obs[f"{k}_pos"]) - np.array(agent_pos)
+                )
                 print(f"{k}: {v.name} {v.category} {v.exists} {dist:.3f}")
             print("\n#########################\n\n")
 
-
-       
         while True:
             await asyncio.sleep(0.1)
-            img = robot.get_obs()[0]["robot0:eyes:Camera:0"]["rgb"]
+            obs, info = robot.get_obs()
+            # print(info["robot0:eyes:Camera:0"]["seg_semantic"])
+            # img = obs["robot0:eyes:Camera:0"]["rgb"]
+            # print(obs["robot0:eyes:Camera:0"].keys())
+            # print(f"seg_semantic: {obs['robot0:eyes:Camera:0']['seg_semantic'].shape}")
+            # print(f"seg_instance: {obs['robot0:eyes:Camera:0']['seg_instance'].shape}")
+            # print(scene.seg_map)
             if self.image_queue.full():
                 self.image_queue.get()
-            self.image_queue.put(img)
+            self.image_queue.put(
+                (obs["robot0:eyes:Camera:0"], info["robot0:eyes:Camera:0"])
+            )
+
+            if self.obj_in_hand_queue.full():
+                self.obj_in_hand_queue.get()
+            obj_in_hand = controller._get_obj_in_hand()
+            if obj_in_hand is not None:
+                self.obj_in_hand_queue.put(obj_in_hand.name)
+            else:
+                self.obj_in_hand_queue.put(None)
+
+            if self.ready_queue.full():
+                self.ready_queue.get()
+            self.ready_queue.put(time.time())
+
             action_handler.check_for_action()
             # task_str, _, _ = env.task.show_instruction()
             # print(task_str)
@@ -378,8 +417,11 @@ app.add_middleware(
 
 task_queue = multiprocessing.Queue()
 image_queue = multiprocessing.Queue(maxsize=1)
-scene_graph_queue = multiprocessing.Queue(maxsize=1)
-sim = multiprocessing.Process(target=SimWrapper, args=(task_queue, image_queue, scene_graph_queue))
+obj_in_hand_queue = multiprocessing.Queue(maxsize=1)
+ready_queue = multiprocessing.Queue(maxsize=1)
+sim = multiprocessing.Process(
+    target=SimWrapper, args=(task_queue, image_queue, obj_in_hand_queue, ready_queue)
+)
 
 
 @app.post("/add_action")
@@ -393,12 +435,11 @@ async def add_action(action: str):
 
 @app.get("/get_image")
 async def get_image():
-    image = image_queue.get()
-    await asyncio.sleep(2) # wait for the image to be updated
-    image = image_queue.get()
-    # img_array = np.frombuffer(image.data, np.uint8).reshape(
-    #     image.height, image.width, 3
-    # )
+    image, _ = image_queue.get()
+    await asyncio.sleep(2)  # wait for the image to be updated
+    image, _ = image_queue.get()
+    image = image["rgb"]
+
     img_array = image
     img = Image.fromarray(img_array)
     buf = io.BytesIO()
@@ -407,10 +448,105 @@ async def get_image():
     return StreamingResponse(buf, media_type="image/png")
 
 
-# @app.get("/get_scene_graph")
-# async def get_scene_graph():
-#     graph = scene_graph_queue.get()
-#     return {"graph": graph}
+@app.get("/get_visible_objects")
+async def get_visible_objects():
+    image, info = image_queue.get()
+    await asyncio.sleep(2)  # wait for the image to be updated
+    image, info = image_queue.get()
+    image = image["seg_instance"]
+    info = info["seg_instance"]
+
+    visible_objects = list(info.values())
+    # filter out background object keywords
+    background_obj_keywords = ["floor", "wall", "robot"]
+    visible_objects = [
+        obj
+        for obj in visible_objects
+        if not any(keyword in obj.lower() for keyword in background_obj_keywords)
+    ]
+
+    return {"objects": visible_objects}
+
+
+@app.get("/get_obj_in_hand")
+async def get_obj_in_hand():
+    obj_in_hand = obj_in_hand_queue.get()
+    return {"obj_in_hand": obj_in_hand}
+
+
+@app.get("/get_is_ready")
+async def get_is_ready():
+    READY_THRESHOLD = 1.0
+    ready = ready_queue.get()
+    ready = ready
+    if time.time() - ready > READY_THRESHOLD:
+        ready = False
+    return {"is_ready": ready}
+
+
+@app.get("/wait_until_ready")
+async def wait_until_ready():
+    READY_THRESHOLD = 1.0
+    ready = ready_queue.get()
+    is_ready = False
+    while not is_ready:
+        ready = ready_queue.get()
+        if time.time() - ready < READY_THRESHOLD:
+            is_ready = True
+        await asyncio.sleep(0.1)
+    return {"is_ready": is_ready}
+
+
+@app.get("/get_semantic_segmentation")
+async def get_semantic_segmentation():
+    image, info = image_queue.get()
+    await asyncio.sleep(2)  # wait for the image to be updated
+    image, info = image_queue.get()
+    image = image["seg_semantic"]
+    info = info["seg_semantic"]
+
+    print(info)
+    img_array = image
+    img = Image.fromarray(img_array)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
+
+
+@app.get("/get_instance_segmentation")
+async def get_instance_segmentation():
+    image, info = image_queue.get()
+    await asyncio.sleep(2)  # wait for the image to be updated
+    image, info = image_queue.get()
+    image = image["seg_instance"]
+    info = info["seg_instance"]
+
+    print(info)
+    img_array = image
+    img = Image.fromarray(img_array)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
+
+
+@app.get("/get_id_instance_segmentation")
+async def get_id_instance_segmentation():
+    image, info = image_queue.get()
+    await asyncio.sleep(2)  # wait for the image to be updated
+    image, info = image_queue.get()
+    image = image["seg_instance_id"]
+    info = info["seg_instance_id"]
+
+    print(info)
+    img_array = image
+    img = Image.fromarray(img_array)
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    buf.seek(0)
+    return StreamingResponse(buf, media_type="image/png")
+
 
 if __name__ == "__main__":
     sim.start()
