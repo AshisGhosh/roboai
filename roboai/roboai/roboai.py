@@ -40,9 +40,9 @@ MODES = {
     "unknown": "text",
 }
 
-DEFAULT_MODEL = "openrouter/meta-llama/llama-3-8b-instruct:free"
+# DEFAULT_MODEL = "openrouter/meta-llama/llama-3-8b-instruct:free"
 # DEFAULT_MODEL = "openrouter/huggingfaceh4/zephyr-7b-beta:free"
-# DEFAULT_MODEL = "ollama/llama3:latest"
+DEFAULT_MODEL = "ollama/llama3:latest"
 # DEFAULT_MODEL = "ollama/phi3"
 # CODING_MODEL = "ollama/codegemma:instruct"
 CODING_MODEL = DEFAULT_MODEL
@@ -148,23 +148,14 @@ def determine_task(state: State) -> Tuple[dict, State]:
     )
     if closest_text:
         result = {"task": closest_text}
+        content = f"Task determined to be **{result['task']}**"
     else:
         result = {"task": "unknown"}
-
-    return result, state.update(**result)
-
-
-@action(reads=["task"], writes=["response", "current_state"])
-def response_for_unknown_task(state: State) -> Tuple[dict, State]:
-    result = {
-        "response": {
-            "content": f"Unknown task: **{state['prompt']}**\nParsing task...",
-            "type": "text",
-            "role": "assistant",
-        },
-        "current_state": "PARSING",
-    }
-    return result, state.update(**result)
+        content = f"Parsing unknown task... **{state['prompt']}**"
+    
+    
+    chat_item = {"role": "assistant", "content": content, "type": "text"}
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 CURRENT_STATE = """
@@ -243,7 +234,13 @@ def create_plan_for_unknown_task(state: State) -> Tuple[dict, State]:
         "feasible": feasible,
     }
 
-    return result, state.update(**result)
+    chat_item = {
+        "content": f"Created initial plan:\n\n{result['task']}\n\nFeasible: `{result['feasible']}`",
+        "type": "text",
+        "role": "assistant",
+    }
+
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(reads=["task", "feasible"], writes=["response", "current_state", "task"])
@@ -255,10 +252,20 @@ def convert_plan_to_steps(state: State) -> Tuple[dict, State]:
         Do not remove any relevant information. Include information about skills and locations into the correct list item.
         Here is the plan:
         {plan}
+
+        Here is an example:
+        Plan:
+            1. navigate to location, the location is the kitchen
+            2. scan the kitchen for relevant objects
+            3. roll out a plan to pick and place the objects
+        Output:
+            ```python
+                list_of_steps = ["navigate to location, the location is the kitchen", "scan the kitchen for relevant objects", "roll out a plan to pick and place the objects"]
+            ``` 
         """,
         expected_output_format="""
         ```python
-            list_of_steps = ["Go to the required kitchen", "Scan for objects", "Roll out plan for pick and place"]
+            list_of_steps = ["step 1", "step 2", "step 3"]
         ```
         """,
     )
@@ -277,38 +284,29 @@ def convert_plan_to_steps(state: State) -> Tuple[dict, State]:
         exec_code(code, exec_vars)
         log.info(exec_vars.get("list_of_steps", None))
         steps = exec_vars.get("list_of_steps", None)
+        content = "Steps:\n\n" + "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps)])
     except Exception as e:
         log.error(f"Error executing code: {e}")
         steps = None
+        content = "Failed to extract steps. Please check the plan and try again."
 
     # formatted_steps = "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps)])
     feasible = state["feasible"]
     current_state = "STARTING" if feasible else "DONE"
 
+
+
     result = {
         "response": {
-            "content": f"Performing task: \n\n{plan}\n\nRobot Feasibility: **{feasible}**",
-            "type": "text",
+            "content": f"Task steps:\n\n {steps}",
+            "type": "text" if steps is not None else "error",
             "role": "assistant",
         },
         "current_state": current_state,
         "task": steps,
     }
 
-    return result, state.update(**result)
-
-
-@action(reads=["task"], writes=["response", "current_state"])
-def confirm_task(state: State) -> Tuple[dict, State]:
-    result = {
-        "response": {
-            "content": f"Performing task: **{state['task']}**",
-            "type": "text",
-            "role": "assistant",
-        },
-        "current_state": "STARTING",
-    }
-    return result, state.update(**result)
+    return result, state.append(chat_history=result["response"]).update(**result)
 
 
 def get_closest_state_from_skills(step: str, skills: dict) -> str:
@@ -421,12 +419,34 @@ def create_state_machine(state: State) -> Tuple[dict, State]:
 
         result = {
             "state_machine": state_machine,
-            "task_state": "output_state_machine",
+            "task_state": "not_started",
             "current_state": "RUNNING",
         }
     result["task"] = task
     result["task_state_idx"] = 0
-    return result, state.update(**result)
+
+    log.info(f"Task: {task}")
+    log.info(f"State machine: {state_machine}")
+    output = "Here is the task:"
+    output += "\n\n"
+    output += "```\n"
+    output += "\n".join([f"{idx+1}. {step}" for idx, step in enumerate(task)])
+    output += "\n```"
+    output += "\n\n"
+    output += "Here is the state machine:"
+    output += "\n\n"
+    output += "```\n"
+    output += "\n".join(
+        [f"{idx+1}. {step}" for idx, step in enumerate(state_machine)]
+    )
+    output += "\n```"
+    chat_item= {
+            "content": output,
+            "type": "text",
+            "role": "assistant",
+        }
+    
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(
@@ -443,9 +463,6 @@ def execute_state_machine(state: State) -> Tuple[dict, State]:
     if state["task_state"] == "not_started":
         task_state = state["state_machine"][0]
         task_state_idx = state["task_state_idx"]
-    elif state["task_state"] == "output_state_machine":
-        task_state = "not_started"
-        task_state_idx = state["task_state_idx"]
     else:
         task_state_idx = state["task_state_idx"] + 1
         if task_state_idx < len(state["state_machine"]):
@@ -454,16 +471,16 @@ def execute_state_machine(state: State) -> Tuple[dict, State]:
             task_state = "done"
             current_state = "DONE"
 
-    if task_state == "scan the scene":
-        task_state = "get_image"
-        state_machine[task_state_idx] = task_state
-        task[task_state_idx] = "get an image of the scene"
-        state_machine.insert(task_state_idx + 1, "ask_vla")
-        task.insert(
-            task_state_idx + 1, "ask the VLA to generate a description from the image"
-        )
-        state_machine.insert(task_state_idx + 2, "get_list_of_objects")
-        task.insert(task_state_idx + 2, "get a list of objects in the scene")
+    # if task_state == "scan the scene":
+    #     task_state = "get_image"
+    #     state_machine[task_state_idx] = task_state
+    #     task[task_state_idx] = "get an image of the scene"
+    #     state_machine.insert(task_state_idx + 1, "ask_vla")
+    #     task.insert(
+    #         task_state_idx + 1, "ask the VLA to generate a description from the image"
+    #     )
+    #     state_machine.insert(task_state_idx + 2, "get_list_of_objects")
+    #     task.insert(task_state_idx + 2, "get a list of objects in the scene")
 
     result = {
         "task_state": task_state,
@@ -472,34 +489,16 @@ def execute_state_machine(state: State) -> Tuple[dict, State]:
         "state_machine": state_machine,
         "task": task,
     }
-    return result, state.update(**result)
-
-
-@action(reads=["state_machine", "task_state", "task"], writes=["response"])
-def output_state_machine(state: State) -> Tuple[dict, State]:
-    log.info(f"Task: {state['task']}")
-    log.info(f"State machine: {state['state_machine']}")
-    output = "Here is the task:"
-    output += "\n\n"
-    output += "```\n"
-    output += "\n".join([f"{idx+1}. {step}" for idx, step in enumerate(state["task"])])
-    output += "\n```"
-    output += "\n\n"
-    output += "Here is the state machine:"
-    output += "\n\n"
-    output += "```\n"
-    output += "\n".join(
-        [f"{idx+1}. {step}" for idx, step in enumerate(state["state_machine"])]
-    )
-    output += "\n```"
-    result = {
-        "response": {
-            "content": output,
-            "type": "text",
-            "role": "assistant",
-        }
+    if task_state_idx < len(state_machine):
+        content = f"Executing task: **{task[task_state_idx]}**\n\nTask state: `{task_state}`\n\nStep {task_state_idx+1} of {len(state_machine)}"
+    else:
+        content = f"Task completed: **{state['prompt']}**"
+    chat_item = {
+        "content": content,
+        "type": "text",
+        "role": "assistant",
     }
-    return result, state.update(**result)
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(
@@ -540,11 +539,26 @@ def navigate_to_location(state: State) -> Tuple[dict, State]:
             wait_until_ready()
     except Exception as e:
         log.error(f"Error executing code: {e}")
-        result = {"location": None}
+        location = None
 
     result = {"location": location}
-    return result, state.update(**result)
+    chat_item = {
+        "content": f"Navigating to location: **{location}**",
+        "type": "text" if location is not None else "error",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
 
+
+@action(reads=["state_machine"], writes=[])
+def scan_the_scene(state: State) -> Tuple[dict, State]:
+    result = {}
+    chat_item = {
+        "content": "Scanning the scene...",
+        "type": "text",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
 
 @action(reads=["state_machine"], writes=["image"])
 def get_image(state: State) -> Tuple[dict, State]:
@@ -552,7 +566,12 @@ def get_image(state: State) -> Tuple[dict, State]:
     # image = Image.open("shared/data/test1.png")
     image = pil_to_b64(image)
     result = {"image": image}
-    return result, state.update(**result)
+    chat_item = {
+        "content": image,
+        "type": "image",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(reads=["image"], writes=["vla_response"])
@@ -561,7 +580,13 @@ def ask_vla(
 ) -> Tuple[dict, State]:
     image = b64_to_pil(state["image"])
     result = {"vla_response": moondream(image, vla_prompt)["result"]}
-    return result, state.update(**result)
+
+    chat_item = {
+        "content": f"**Image Description:**:\n\n{result['vla_response']}",
+        "type": "text",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(reads=["vla_response"], writes=["observations"])
@@ -605,7 +630,12 @@ def get_list_of_objects(state: State) -> Tuple[dict, State]:
     except Exception as e:
         log.error(f"Error executing code: {e}")
     result = {"observations": observations}
-    return result, state.update(**result)
+    chat_item = {
+        "content": f"Objects on table: \n\n`{objects_on_table}`",
+        "type": "text",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(
@@ -663,7 +693,29 @@ def rollout_pick_and_place_plan(state: State) -> Tuple[dict, State]:
         )
 
     result = {"state_machine": state_machine, "task": task}
-    return result, state.update(**result)
+
+    log.info(f"Task: {task}")
+    log.info(f"State machine: {state_machine}")
+    output = "Here is the task:"
+    output += "\n\n"
+    output += "```\n"
+    output += "\n".join([f"{idx+1}. {step}" for idx, step in enumerate(task)])
+    output += "\n```"
+    output += "\n\n"
+    output += "Here is the state machine:"
+    output += "\n\n"
+    output += "```\n"
+    output += "\n".join(
+        [f"{idx+1}. {step}" for idx, step in enumerate(state_machine)]
+    )
+    output += "\n```"
+    chat_item= {
+            "content": output,
+            "type": "text",
+            "role": "assistant",
+        }
+    
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(
@@ -714,7 +766,12 @@ def pick_and_place(state: State) -> Tuple[dict, State]:
         location = state["obj_location"]
 
     result = {"obj_to_grasp": obj_to_grasp, "obj_location": location}
-    return result, state.update(**result)
+    chat_item = {
+        "content": f"Pick and place **{obj_to_grasp}** at **{location}**",
+        "type": "text",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(reads=["obj_to_grasp", "obj_location"], writes=["location"])
@@ -722,7 +779,7 @@ def navigate_for_pick(state: State) -> Tuple[dict, State]:
     location = state["obj_location"]
     obj_to_grasp = state["obj_to_grasp"]
     location = get_closest_text(location, list(SEMANTIC_LOCATIONS.keys()))
-    print(f"Pick and place {obj_to_grasp} at {location}")
+    log.info(f"Pick and place {obj_to_grasp} at {location}")
     if state["location"] != location:
         log.info(f"Changing location from {state['location']} to {location}")
         navigate_to(
@@ -733,7 +790,13 @@ def navigate_for_pick(state: State) -> Tuple[dict, State]:
             location = state["location"]
 
     result = {"location": location}
-    return result, state.update(**result)
+
+    chat_item = {
+        "content": f"Navigated to **{location}** to pick **{obj_to_grasp}**",
+        "type": "text",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(reads=["obj_to_grasp", "obj_location"], writes=["obj_in_hand", "obj_to_grasp"])
@@ -757,7 +820,13 @@ def pick_object(state: State) -> Tuple[dict, State]:
     wait_until_ready()
 
     result = {"obj_in_hand": obj_in_hand, "obj_to_grasp": obj_to_grasp}
-    return result, state.update(**result)
+
+    chat_item = {
+        "content": f"Picked **{obj_in_hand}**",
+        "type": "text" if obj_in_hand else "error",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(reads=["location"], writes=["location"])
@@ -765,206 +834,30 @@ def navigate_for_place(state: State) -> Tuple[dict, State]:
     location = "unknown"
 
     result = {"location": location}
-    return result, state.update(**result)
+
+    chat_item = {
+        "content": f"Navigated to place **{state['obj_in_hand']}**",
+        "type": "text",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
 
 
 @action(reads=["obj_in_hand"], writes=["obj_in_hand"])
 def place_object(state: State) -> Tuple[dict, State]:
+    obj_to_place = state["obj_in_hand"]
     place(None)
     wait_until_ready()
 
     result = {"obj_in_hand": None}
-    return result, state.update(**result)
 
+    chat_item = {
+        "content": f"Placed object **{obj_to_place}**",
+        "type": "text",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
 
-@action(
-    reads=["observations", "task", "task_state_idx", "prompt"], writes=["plan_prompt"]
-)
-def create_plan_prompt(state: State) -> Tuple[dict, State]:
-    """
-    Rollout pick and place plan
-    """
-    if state["task"] == "Clear the table":
-        plan_prompt = f"""Create a plan for a robot to {state["task"]}.:
-            {state["observations"]}
-            Do not add any extra steps.
-        """
-    elif state["task"] == "Pick and place":
-        plan_prompt = "Unknown task"
-    else:
-        plan_prompt = f"""Create a plan for a robot to {state["prompt"]}.:
-            Given the following:
-            {state["observations"]}
-            Robot is at {state["location"]}
-            Do not add any extra steps.
-            For context, here is the complete task:
-            {state["task"]}
-        """
-    result = {"plan_prompt": plan_prompt}
-    return result, state.update(**result)
-
-
-@action(
-    reads=["task", "plan_prompt", "task_state_idx"],
-    writes=["plan_prompt", "similar_plans"],
-)
-def check_for_similar_plans(state: State) -> Tuple[dict, State]:
-    plan_prompt = state["plan_prompt"]
-    task_idx = state["task_state_idx"]
-    similar_plans = get_closest_text(state["task"][task_idx], list(PLANS.values()))
-    if similar_plans:
-        plan_prompt += f"Here is a template to follow: {similar_plans}"
-    result = {"plan_prompt": plan_prompt, "similar_plans": similar_plans}
-    return result, state.update(**result)
-
-
-@action(
-    reads=["plan_prompt", "similar_plans"], writes=["plan_prompt", "relevant_skills"]
-)
-def check_for_relevant_skills(state: State) -> Tuple[dict, State]:
-    plan_prompt = state["plan_prompt"]
-    relevant_skills = get_closest_text(state["similar_plans"], list(SKILLS.keys()), k=3)
-    if relevant_skills:
-        plan_prompt += f"You can use the following actions: {relevant_skills}"
-    result = {"plan_prompt": plan_prompt, "relevant_skills": relevant_skills}
-    return result, state.update(**result)
-
-
-@action(reads=["plan_prompt", "similar_plans"], writes=["plan"])
-def create_plan(state: State) -> Tuple[dict, State]:
-    plan_task = Task(
-        state["plan_prompt"],
-        # expected_output_format="""
-        #     1. pick object1
-        #     2. place object1
-        #     3. pick object2
-        #     4. place object2
-        #     5. pick object3
-        #     6. place object3
-        # """
-        expected_output_format="A numbered list of steps.",
-    )
-
-    planner_agent = Agent(
-        name="Planner",
-        model=DEFAULT_MODEL,
-        system_message="""
-        You are a planner that breaks down tasks into steps for robots.
-        Create a conscise set of steps that a robot can do.
-        Do not add any extra steps.
-        """,
-        # + plan_task.generate_tool_prompt(),
-    )
-
-    plan_task.add_solving_agent(planner_agent)
-    # log.info(plan_task)
-    output = plan_task.run()
-    log.info(output)
-    result = {"plan": output}
-    return result, state.update(**result)
-
-
-@action(reads=["plan"], writes=["code", "exec_vars"])
-def convert_plan_to_code(state: State) -> Tuple[dict, State]:
-    coder_task = Task(
-        f"""Return python code to execute the plan:
-            {state["plan"]}
-            Convert the plan to code using only the following functions, do not add any extra code or imports.
-        """
-    )
-    coder_task.register_tool(
-        name="pick",
-        func=pick,
-        description="Robot picks up an object",
-        example='"pick_success = pick(object_name)" --> Returns: True ',
-    )
-    coder_task.register_tool(
-        name="place",
-        func=place,
-        description="Robot places an object",
-        example='"place_success = place(location="place location")" --> Returns: True ',
-    )
-    coder_agent = Agent(
-        name="Coder",
-        model=CODING_MODEL,
-        system_message="""
-        You are a coder that writes concise and exact code to execute the plan.
-        Use only the provided functions. No additional imports.
-        """
-        + coder_task.generate_tool_prompt(),
-    )
-    coder_task.add_solving_agent(coder_agent)
-    log.info(coder_task)
-    output = coder_task.run()
-    code = extract_code(output)
-    result = {"code": code, "exec_vars": coder_task.get_exec_vars_serialized()}
-    return result, state.update(**result)
-
-
-@action(reads=["code", "exec_vars"], writes=["execution"])
-def validate_code(state: State) -> Tuple[dict, State]:
-    try:
-        exec_vars = state["exec_vars"]
-        exec_vars = {k: globals().get(v, None) for k, v in exec_vars.items()}
-        # convert to mock functions
-        for k, v in exec_vars.items():
-            if callable(v):
-                exec_vars[k] = globals()[f"{k}_mock"]
-        exec_vars["test_mode"] = True
-        exec_code(state["code"], exec_vars)
-        execution = "SUCCESS"
-    except Exception as e:
-        log.error(f"Error executing code: {e}")
-        execution = f"Error executing code: {e}"
-    result = {"execution": execution}
-    return result, state.update(**result)
-
-
-@action(reads=["code", "execution", "code_attempts"], writes=["code", "code_attempts"])
-def iterate_code(state: State) -> Tuple[dict, State]:
-    coder_task = Task(
-        f"""Given the following error, fix the code. 
-        Error: \n{state['execution']}
-        Code: \n{state['code']} 
-        """
-    )
-    coder_task.register_tool(
-        name="pick",
-        func=pick,
-        description="Robot picks up the provided arg 'object_name'",
-        example='"pick_success = pick(object_name="Object 1")" --> Returns: True ',
-    )
-    coder_task.register_tool(
-        name="place",
-        func=place,
-        description="Robot places the provided arg 'object_name'",
-        example='"place_success = place(location="place location")" --> Returns: True ',
-    )
-    coder_agent = Agent(
-        name="Coder",
-        model=CODING_MODEL,
-        system_message="""
-        You are a coder that writes concise and exact code to execute the plan.
-        Use only the provided functions.
-        """
-        + coder_task.generate_tool_prompt(),
-    )
-    coder_task.add_solving_agent(coder_agent)
-    log.info(coder_task)
-    output = coder_task.run()
-    code = extract_code(output)
-    result = {"code": code, "code_attempts": state.get("code_attempts", 0) + 1}
-    return result, state.update(**result)
-
-
-@action(reads=["code"], writes=["execution"])
-def execute_code(state: State) -> Tuple[dict, State]:
-    try:
-        exec_code(state["code"])
-        result = {"execution": "Execution successful!"}
-    except Exception as e:
-        result = {"execution": f"Error executing code: {e}"}
-    return result, state.update(**result)
 
 
 @action(reads=["task", "safe"], writes=["response"])
@@ -976,83 +869,6 @@ def prompt_for_more(state: State) -> Tuple[dict, State]:
             "role": "assistant",
         }
     }
-    return result, state.update(**result)
-
-
-@action(reads=["task_state"], writes=["response"])
-def create_response_for_task_state(state: State) -> Tuple[dict, State]:
-    if state["task_state"] == "navigate to location":
-        result = {
-            "response": {
-                "content": f"Robot is now at **{state['location']}**.",
-                "type": "text",
-                "role": "assistant",
-            }
-        }
-    elif state["task_state"] == "get_image":
-        result = {
-            "response": {
-                "content": state["image"],
-                "type": "image",
-                "role": "assistant",
-            }
-        }
-    elif state["task_state"] == "ask_vla":
-        result = {
-            "response": {
-                "content": state["vla_response"],
-                "type": "text",
-                "role": "assistant",
-            }
-        }
-    elif state["task_state"] == "get_list_of_objects":
-        result = {
-            "response": {
-                "content": state["observations"]["objects_on_table"],
-                "type": "code",
-                "role": "assistant",
-            }
-        }
-    elif state["task_state"] == "rollout pick and place plan":
-        result = {
-            "response": {
-                "content": state["plan"],
-                "type": "text",
-                "role": "assistant",
-            }
-        }
-    elif state["task_state"] == "pick_and_place":
-        result = {
-            "response": {
-                "content": f"Completed the task. {state['task'][state['task_state_idx']]}",
-                "type": "text",
-                "role": "assistant",
-            }
-        }
-    elif state["task_state"] == "code":
-        result = {
-            "response": {
-                "content": state["code"],
-                "type": "code",
-                "role": "assistant",
-            }
-        }
-    elif state["task_state"] == "execute_code":
-        result = {
-            "response": {
-                "content": state["execution"],
-                "type": "text",
-                "role": "assistant",
-            }
-        }
-    elif state["task_state"] == "done":
-        result = {
-            "response": {
-                "content": "I have completed the task.",
-                "type": "text",
-                "role": "assistant",
-            }
-        }
     return result, state.update(**result)
 
 
@@ -1077,12 +893,16 @@ def create_error_response(state: State) -> Tuple[dict, State]:
 def response(state: State) -> Tuple[dict, State]:
     if state["current_state"] == "DONE":
         current_state = "PENDING"
-    elif state["current_state"] == "PARSING":
-        current_state = "PARSING"
+        response = {
+            "content": "I'm done. Goodbye!",
+            "type": "text",
+            "role": "assistant",
+        }
     else:
         current_state = state["current_state"]
-    result = {"chat_item": state["response"], "current_state": current_state}
-    return result, state.append(chat_history=state["response"]).update(**result)
+        response = state["response"]
+    result = {"chat_item": response, "current_state": current_state}
+    return result, state.append(chat_history=response).update(**result)
 
 
 MAX_CODE_ATTEMPTS = 3
@@ -1105,14 +925,12 @@ def base_application(
         .with_actions(
             prompt=process_prompt,
             determine_task=determine_task,
-            response_for_unknown_task=response_for_unknown_task,
             create_plan_for_unknown_task=create_plan_for_unknown_task,
             convert_plan_to_steps=convert_plan_to_steps,
-            confirm_task=confirm_task,
             create_state_machine=create_state_machine,
-            output_state_machine=output_state_machine,
             execute_state_machine=execute_state_machine,
             navigate_to_location=navigate_to_location,
+            scan_the_scene=scan_the_scene,
             get_image=get_image,
             ask_vla=ask_vla,
             get_list_of_objects=get_list_of_objects,
@@ -1122,58 +940,35 @@ def base_application(
             pick_object=pick_object,
             navigate_for_place=navigate_for_place,
             place_object=place_object,
-            create_plan_prompt=create_plan_prompt,
-            check_for_similar_plans=check_for_similar_plans,
-            check_for_relevant_skills=check_for_relevant_skills,
-            create_plan=create_plan,
-            code=convert_plan_to_code,
-            validate_code=validate_code,
-            iterate_code=iterate_code,
             create_error_response=create_error_response,
-            execute_code=execute_code,
-            create_response=create_response_for_task_state,
             prompt_for_more=prompt_for_more,
             response=response,
         )
         .with_transitions(
             ("prompt", "determine_task", default),
-            ("determine_task", "response_for_unknown_task", when(task="unknown")),
-            ("response_for_unknown_task", "response", default),
+            ("determine_task", "create_plan_for_unknown_task", when(task="unknown")),
             ("create_plan_for_unknown_task", "convert_plan_to_steps", default),
             (
                 "convert_plan_to_steps",
-                "response_for_unknown_task",
+                "create_error_response",
                 when(task="unknown"),
             ),
-            ("convert_plan_to_steps", "response", default),
-            ("determine_task", "confirm_task", default),
-            ("confirm_task", "response", default),
+            ("convert_plan_to_steps", "create_state_machine", default),
+            ("determine_task", "create_state_machine", default),
             ("create_state_machine", "execute_state_machine", default),
             ("create_state_machine", "prompt_for_more", when(state_machine="unknown")),
-            (
-                "execute_state_machine",
-                "output_state_machine",
-                when(task_state="not_started"),
-            ),
-            ("output_state_machine", "response", default),
             (
                 "execute_state_machine",
                 "navigate_to_location",
                 when(task_state="navigate to location"),
             ),
-            ("execute_state_machine", "get_image", when(task_state="get_image")),
-            ("execute_state_machine", "ask_vla", when(task_state="ask_vla")),
-            (
-                "execute_state_machine",
-                "get_list_of_objects",
-                when(task_state="get_list_of_objects"),
-            ),
+            ("execute_state_machine", "scan_the_scene", when(task_state="scan the scene")),
             (
                 "execute_state_machine",
                 "rollout_pick_and_place_plan",
                 when(task_state="rollout pick and place plan"),
             ),
-            ("rollout_pick_and_place_plan", "output_state_machine", default),
+            ("rollout_pick_and_place_plan", "execute_state_machine", default),
             (
                 "execute_state_machine",
                 "pick_and_place",
@@ -1184,46 +979,17 @@ def base_application(
             ("pick_object", "create_error_response", when(obj_in_hand=None)),
             ("pick_object", "navigate_for_place", default),
             ("navigate_for_place", "place_object", default),
-            ("place_object", "create_response", default),
-            (
-                "execute_state_machine",
-                "create_plan_prompt",
-                when(task_state="create_plan"),
-            ),
-            ("create_plan_prompt", "check_for_similar_plans", default),
-            ("check_for_similar_plans", "create_plan", when(similar_plans=None)),
-            ("check_for_similar_plans", "check_for_relevant_skills", default),
-            ("check_for_relevant_skills", "create_plan", default),
-            ("execute_state_machine", "code", when(task_state="code")),
-            (
-                "execute_state_machine",
-                "execute_code",
-                when(task_state="execute_code"),
-            ),
-            ("execute_state_machine", "create_response", when(task_state="done")),
-            ("navigate_to_location", "create_error_response", when(location=None)),
-            ("navigate_to_location", "create_response", default),
-            ("get_image", "create_response", default),
-            ("ask_vla", "create_response", default),
-            ("get_list_of_objects", "create_response", default),
-            ("create_plan", "create_response", default),
-            ("code", "validate_code", default),
-            ("validate_code", "create_response", when(execution="SUCCESS")),
-            ("validate_code", "iterate_code", default),
-            (
-                "iterate_code",
-                "create_error_response",
-                when(code_attempts=MAX_CODE_ATTEMPTS),
-            ),
-            ("create_error_response", "response", default),
-            ("iterate_code", "validate_code", default),
-            ("execute_code", "create_response", default),
-            ("create_response", "response", default),
-            ("response", "create_plan_for_unknown_task", when(current_state="PARSING")),
+            ("place_object", "execute_state_machine", default),
+            ("execute_state_machine", "response", when(task_state="done")),
+            ("navigate_to_location", "execute_state_machine", default),
+            ("scan_the_scene", "get_image", default),
+            ("get_image", "ask_vla", default),
+            ("ask_vla", "get_list_of_objects", default),
+            ("get_list_of_objects", "execute_state_machine", default),
             ("response", "prompt", when(current_state="PENDING")),
             ("response", "execute_state_machine", when(current_state="RUNNING")),
-            ("response", "create_state_machine", when(current_state="STARTING")),
             ("prompt_for_more", "response", default),
+            ("create_error_response", "response", default),
         )
         # initializes from the tracking log if it does not already exist
         .initialize_from(

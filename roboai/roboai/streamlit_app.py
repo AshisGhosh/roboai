@@ -1,3 +1,4 @@
+import time
 from typing import Optional
 
 import roboai as chatbot_application
@@ -15,26 +16,25 @@ from burr.integrations.streamlit import (
 st.set_page_config(layout="wide")
 
 st.markdown(
-    "This is a prototype streamlit app -- this is a UI for demonstration purposes, but you can"
-    " run the real UI by running `burr` -- a window will pop up and you can follow the results live!"
+    "This is a demo of RoboAI - LLM based planning for robots."
 )
 
 
 def render_chat_message(record: Record):
-    if record.action in ["prompt", "response"]:
-        recent_chat_message = record.state["chat_history"][-1]
-        content = recent_chat_message["content"]
-        content_type = recent_chat_message["type"]
-        role = recent_chat_message["role"]
-        with st.chat_message(role):
-            if content_type == "image":
-                st.image(content)
-            elif content_type == "code":
-                st.code(content)
-            elif content_type == "text":
-                st.write(content)
-            elif content_type == "error":
-                st.error(content)
+    # if record.action in ["prompt", "response"]:
+    recent_chat_message = record.state["chat_history"][-1]
+    content = recent_chat_message["content"]
+    content_type = recent_chat_message["type"]
+    role = recent_chat_message["role"]
+    with st.chat_message(role):
+        if content_type == "image":
+            st.image(content)
+        elif content_type == "code":
+            st.code(content)
+        elif content_type == "text":
+            st.write(content)
+        elif content_type == "error":
+            st.error(content)
 
 
 def retrieve_state():
@@ -67,9 +67,9 @@ def chatbot_step(app_state: AppState, prompt: Optional[str]) -> bool:
         return False
     application = app_state.app
     step_output = application.step(inputs=inputs)
-    if step_output is None:
-        st.session_state.running = False
-        return False
+    # if step_output is None:
+    #     st.session_state.running = False
+    #     return False
     action, result, state = step_output
     app_state.history.append(Record(state.get_all(), action.name, result))
     set_slider_to_current()
@@ -81,7 +81,7 @@ def chatbot_step(app_state: AppState, prompt: Optional[str]) -> bool:
 
 
 def main():
-    st.title("Chatbot example with Burr")
+    st.title("RoboAI")
     app_state = retrieve_state()  # retrieve first so we can use for the ret of the step
     columns = st.columns(2)
     with columns[0]:
@@ -92,6 +92,8 @@ def main():
         with st.container(height=850):
             for item in app_state.history:
                 render_chat_message(item)
+        # wait for 0.1 seconds to allow the UI to update
+        time.sleep(0.1)
     with columns[1]:
         render_explorer(app_state)
     update_state(app_state)  # update so the next iteration knows what to do
