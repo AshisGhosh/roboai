@@ -152,8 +152,7 @@ def determine_task(state: State) -> Tuple[dict, State]:
     else:
         result = {"task": "unknown"}
         content = f"Parsing unknown task... **{state['prompt']}**"
-    
-    
+
     chat_item = {"role": "assistant", "content": content, "type": "text"}
     return result, state.append(chat_history=chat_item).update(**result)
 
@@ -284,7 +283,9 @@ def convert_plan_to_steps(state: State) -> Tuple[dict, State]:
         exec_code(code, exec_vars)
         log.info(exec_vars.get("list_of_steps", None))
         steps = exec_vars.get("list_of_steps", None)
-        content = "Steps:\n\n" + "\n".join([f"{i+1}. {step}" for i, step in enumerate(steps)])
+        content = "Steps:\n\n" + "\n".join(
+            [f"{i+1}. {step}" for i, step in enumerate(steps)]
+        )
     except Exception as e:
         log.error(f"Error executing code: {e}")
         steps = None
@@ -294,11 +295,9 @@ def convert_plan_to_steps(state: State) -> Tuple[dict, State]:
     feasible = state["feasible"]
     current_state = "STARTING" if feasible else "DONE"
 
-
-
     result = {
         "response": {
-            "content": f"Task steps:\n\n {steps}",
+            "content": content,
             "type": "text" if steps is not None else "error",
             "role": "assistant",
         },
@@ -436,16 +435,14 @@ def create_state_machine(state: State) -> Tuple[dict, State]:
     output += "Here is the state machine:"
     output += "\n\n"
     output += "```\n"
-    output += "\n".join(
-        [f"{idx+1}. {step}" for idx, step in enumerate(state_machine)]
-    )
+    output += "\n".join([f"{idx+1}. {step}" for idx, step in enumerate(state_machine)])
     output += "\n```"
-    chat_item= {
-            "content": output,
-            "type": "text",
-            "role": "assistant",
-        }
-    
+    chat_item = {
+        "content": output,
+        "type": "text",
+        "role": "assistant",
+    }
+
     return result, state.append(chat_history=chat_item).update(**result)
 
 
@@ -559,6 +556,7 @@ def scan_the_scene(state: State) -> Tuple[dict, State]:
         "role": "assistant",
     }
     return result, state.append(chat_history=chat_item).update(**result)
+
 
 @action(reads=["state_machine"], writes=["image"])
 def get_image(state: State) -> Tuple[dict, State]:
@@ -705,16 +703,14 @@ def rollout_pick_and_place_plan(state: State) -> Tuple[dict, State]:
     output += "Here is the state machine:"
     output += "\n\n"
     output += "```\n"
-    output += "\n".join(
-        [f"{idx+1}. {step}" for idx, step in enumerate(state_machine)]
-    )
+    output += "\n".join([f"{idx+1}. {step}" for idx, step in enumerate(state_machine)])
     output += "\n```"
-    chat_item= {
-            "content": output,
-            "type": "text",
-            "role": "assistant",
-        }
-    
+    chat_item = {
+        "content": output,
+        "type": "text",
+        "role": "assistant",
+    }
+
     return result, state.append(chat_history=chat_item).update(**result)
 
 
@@ -859,7 +855,6 @@ def place_object(state: State) -> Tuple[dict, State]:
     return result, state.append(chat_history=chat_item).update(**result)
 
 
-
 @action(reads=["task", "safe"], writes=["response"])
 def prompt_for_more(state: State) -> Tuple[dict, State]:
     result = {
@@ -962,7 +957,11 @@ def base_application(
                 "navigate_to_location",
                 when(task_state="navigate to location"),
             ),
-            ("execute_state_machine", "scan_the_scene", when(task_state="scan the scene")),
+            (
+                "execute_state_machine",
+                "scan_the_scene",
+                when(task_state="scan the scene"),
+            ),
             (
                 "execute_state_machine",
                 "rollout_pick_and_place_plan",

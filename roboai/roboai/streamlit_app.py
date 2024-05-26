@@ -15,9 +15,7 @@ from burr.integrations.streamlit import (
 
 st.set_page_config(layout="wide")
 
-st.markdown(
-    "This is a demo of RoboAI - LLM based planning for robots."
-)
+st.markdown("This is a demo of RoboAI - LLM based planning for robots.")
 
 
 def render_chat_message(record: Record):
