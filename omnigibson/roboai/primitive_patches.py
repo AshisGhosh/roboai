@@ -1,3 +1,4 @@
+import numpy as np
 from omnigibson.action_primitives.action_primitive_set_base import ActionPrimitiveError
 
 
@@ -22,13 +23,14 @@ def _simplified_place_with_predicate(
         )
 
     # Find a spot to put it
-    obj_pose = self._sample_pose_with_object_and_predicate(
-        predicate,
-        obj_in_hand,
-        obj,
-        near_poses=near_poses,
-        near_poses_threshold=near_poses_threshold,
-    )
+    # obj_pose = self._sample_pose_with_object_and_predicate(
+    #     predicate,
+    #     obj_in_hand,
+    #     obj,
+    #     near_poses=near_poses,
+    #     near_poses_threshold=near_poses_threshold,
+    # )
+    obj_pose = (np.array([-0.7, 0.5, 0.5]), np.array([0.0, 0.0, 0.0, 1.0]))
 
     # Get close, release the object.
     # yield from self._navigate_if_needed(obj, pose_on_obj=obj_pose)
@@ -50,3 +52,5 @@ def _quick_settle_robot(self):
     for _ in range(10):
         empty_action = self._empty_action()
         yield self._postprocess_action(empty_action)
+
+    print("Settled robot")

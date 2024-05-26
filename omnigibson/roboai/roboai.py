@@ -458,7 +458,7 @@ async def get_visible_objects():
 
     visible_objects = list(info.values())
     # filter out background object keywords
-    background_obj_keywords = ["floor", "wall", "robot"]
+    background_obj_keywords = ["floor", "wall", "robot", "table"]
     visible_objects = [
         obj
         for obj in visible_objects

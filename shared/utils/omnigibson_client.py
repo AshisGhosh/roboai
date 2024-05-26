@@ -76,7 +76,7 @@ def add_action(action: str):
 def pick(object_name: str):
     print(f"Attempting to pick {object_name}. Referencing against visible objects.")
     objects = get_visible_objects()
-    object_name = get_closest_text(object_name, objects)
+    object_name = get_closest_text(object_name, objects, threshold=0.2)
     print(f"picking object {object_name}")
     action = {"action": f"pick,{object_name}"}
     add_action(action)
