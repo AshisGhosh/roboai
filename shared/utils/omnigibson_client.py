@@ -18,7 +18,10 @@ async def _get_image() -> Image:
 
 
 def get_image():
-    return asyncio.run(_get_image())
+    response = asyncio.run(_get_image())
+    if isinstance(response, dict):
+        return response.get("success", True)
+    return response
 
 
 async def _get_visible_objects() -> dict:
@@ -29,6 +32,8 @@ async def _get_visible_objects() -> dict:
 
 def get_visible_objects():
     response = asyncio.run(_get_visible_objects())
+    if "success" in response.keys():
+        return response.get("success", True)
     return response["objects"]
 
 
@@ -70,7 +75,10 @@ async def _add_action(action: str):
 
 
 def add_action(action: str):
-    return asyncio.run(_add_action(action))
+    response = asyncio.run(_add_action(action))
+    if isinstance(response, dict):
+        return response.get("success", True)
+    return response
 
 
 def pick(object_name: str):
@@ -79,14 +87,14 @@ def pick(object_name: str):
     object_name = get_closest_text(object_name, objects, threshold=0.2)
     print(f"picking object {object_name}")
     action = {"action": f"pick,{object_name}"}
-    add_action(action)
+    return add_action(action)
 
 
 def place(location: str):
     print(f"placing object in {location}")
     print("placing object")
     action = {"action": f"place,{location}"}
-    add_action(action)
+    return add_action(action)
 
 
 def navigate_to(object_name: str, location: str = None):
@@ -96,4 +104,4 @@ def navigate_to(object_name: str, location: str = None):
     else:
         action = {"action": f"navigate_to_object,{object_name}"}
 
-    add_action(action)
+    return add_action(action)

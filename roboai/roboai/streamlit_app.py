@@ -71,7 +71,9 @@ def chatbot_step(app_state: AppState, prompt: Optional[str]) -> bool:
     action, result, state = step_output
     app_state.history.append(Record(state.get_all(), action.name, result))
     set_slider_to_current()
-    if action.name == "response" and state["current_state"] == "PENDING":
+    if action.name in ["response", "finish_and_score_task"] and state[
+        "current_state"
+    ] in ["PENDING", "FAILED"]:
         # we've gotten to the end
         st.session_state.running = False
         return True

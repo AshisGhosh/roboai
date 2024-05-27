@@ -26,6 +26,7 @@ from agent import Agent
 from plans import PLANS
 from skills import SKILLS
 from semantic_locations import SEMANTIC_LOCATIONS
+from role_context import ROBOT_CONTEXT, ROLE_CONTEXT, EMPLOYEE_HANDBOOK
 
 import logging
 
@@ -40,9 +41,9 @@ MODES = {
     "unknown": "text",
 }
 
-# DEFAULT_MODEL = "openrouter/meta-llama/llama-3-8b-instruct:free"
+DEFAULT_MODEL = "openrouter/meta-llama/llama-3-8b-instruct:free"
 # DEFAULT_MODEL = "openrouter/huggingfaceh4/zephyr-7b-beta:free"
-DEFAULT_MODEL = "ollama/llama3:latest"
+# DEFAULT_MODEL = "ollama/llama3:latest"
 # DEFAULT_MODEL = "ollama/phi3"
 # CODING_MODEL = "ollama/codegemma:instruct"
 CODING_MODEL = DEFAULT_MODEL
@@ -135,17 +136,76 @@ def exec_code(code, exec_vars, attempts=3):
     return success
 
 
-@action(reads=[], writes=["chat_history", "prompt"])
+@action(reads=["current_state"], writes=["chat_history", "prompt"])
 def process_prompt(state: State, prompt: str) -> Tuple[dict, State]:
     result = {"chat_item": {"role": "user", "content": prompt, "type": "text"}}
+    if state["current_state"] == "FAILED":
+        original_prompt = state["prompt"]
+        if isinstance(original_prompt, str):
+            prompt = [original_prompt, prompt]
+        elif isinstance(original_prompt, list):
+            prompt = original_prompt.append(prompt)
+    log.info(f"{LogColors.OKCYAN}Prompt: {prompt}{LogColors.ENDC}")
     return result, state.append(chat_history=result["chat_item"]).update(prompt=prompt)
 
 
-@action(reads=["prompt"], writes=["task"])
-def determine_task(state: State) -> Tuple[dict, State]:
-    closest_text = get_closest_text(
-        state["prompt"], ["What is on the table?", "Clear the table"], threshold=0.75
+@action(
+    reads=["current_state", "prompt"],
+    writes=["current_state", "task_state_idx", "prompt"],
+)
+def parse_update(state: State) -> Tuple[dict, State]:
+    options = ["retry", "new task", "modify existing task"]
+    prompt = state["prompt"][-1]
+    classify_update = Task(
+        f"""Given the following prompt, classify the type of prompt it is:
+        {prompt}
+        Options: {options}
+        Examples
+        - Prompt: "I want to retry the task" Output: "retry"
+        - Prompt: "Go to the kitchen and grab the items" Output: "new task"
+        - Prompt: "Don't pick up the items, just scan the scene" Output: "modify existing task"
+        """,
+        expected_output_format="A string respresenting the classification.",
     )
+    classify_update_agent = Agent(
+        name="Update Classifier",
+        model=DEFAULT_MODEL,
+        system_message="""
+        You are a helpful agent that concisely responds.
+        """,
+    )
+    classify_update.add_solving_agent(classify_update_agent)
+    output = classify_update.run()
+
+    update_cls = get_closest_text(output, options)
+    task_state_idx = 0
+    if update_cls == "retry":
+        task_state_idx = state["task_state_idx"] - 1
+        content = "Retrying the task..."
+        current_state = "RUNNING"
+        prompt = "\n\n".join(state["prompt"])
+    elif update_cls == "new task":
+        current_state = "STARTING"
+        content = "Starting a new task..."
+    elif update_cls == "modify existing task":
+        content = "Modifying existing task is not supported yet."
+
+    log.info(f"Update classification: {update_cls} - {content}")
+
+    result = {
+        "current_state": current_state,
+        "task_state_idx": task_state_idx,
+        "prompt": prompt,
+    }
+
+    chat_item = {"content": content, "type": "text", "role": "assistant"}
+
+    return {}, state.append(chat_history=chat_item).update(**result)
+
+
+@action(reads=["prompt"], writes=["task"])
+def determine_if_task_in_skill_library(state: State) -> Tuple[dict, State]:
+    closest_text = get_closest_text(state["prompt"], list(PLANS.keys()), threshold=0.75)
     if closest_text:
         result = {"task": closest_text}
         content = f"Task determined to be **{result['task']}**"
@@ -162,13 +222,72 @@ The robot is in the living room in the house. It can navigate to known locations
 """
 
 
-@action(reads=["task"], writes=["task", "feasible"])
+@action(reads=["prompt"], writes=["task"])
 def create_plan_for_unknown_task(state: State) -> Tuple[dict, State]:
+    result = {"task": state["prompt"]}
+    chat_item = {
+        "content": f"Creating plan for **{state['prompt']}**",
+        "type": "text",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
+
+
+@action(reads=["prompt"], writes=["closest_plans"])
+def get_closest_plans(state: State) -> Tuple[dict, State]:
     closest_plans = get_closest_text(
         state["prompt"], list(PLANS.keys()), k=2, threshold=0.75
     )
+    chat_item = {
+        "content": f"Closest plans: {closest_plans}",
+        "type": "text",
+        "role": "assistant",
+    }
+    result = {"closest_plans": closest_plans}
+    return result, state.append(chat_history=chat_item).update(
+        closest_plans=closest_plans
+    )
+
+
+@action(
+    reads=["prompt", "closest_plans"],
+    writes=[
+        "robot_context",
+        "role_context",
+        "employee_context",
+        "semantic_location_context",
+    ],
+)
+def get_role_and_location_context(state: State) -> Tuple[dict, State]:
+    result = {
+        "robot_context": ROBOT_CONTEXT,
+        "role_context": ROLE_CONTEXT,
+        "employee_context": EMPLOYEE_HANDBOOK,
+        "semantic_location_context": ", ".join(list(SEMANTIC_LOCATIONS.keys())),
+    }
+    chat_item = {
+        "content": "Getting role and location context. Creating initial plan.",
+        "type": "text",
+        "role": "assistant",
+    }
+    return result, state.append(chat_history=chat_item).update(**result)
+
+
+@action(
+    reads=[
+        "prompt",
+        "closest_plans",
+        "robot_context",
+        "role_context",
+        "employee_context",
+        "semantic_location_context",
+    ],
+    writes=["plan"],
+)
+def create_initial_plan(state: State) -> Tuple[dict, State]:
+    closest_plans = state["closest_plans"]
     if closest_plans:
-        closest_plans = [PLANS[k] for k in closest_plans]
+        closest_plans = [f"{k}:\n   {PLANS[k]}" for k in closest_plans]
         closest_plans = "\n".join(closest_plans)
 
     task = Task(
@@ -178,7 +297,11 @@ def create_plan_for_unknown_task(state: State) -> Tuple[dict, State]:
         f"\n\nExamples: {closest_plans} "
         if closest_plans
         else ""
-        + "\n\nIf information is needed, use the skills to get observe or scan the scene.",
+        + "\n\nIf information is needed, use the skills to get observe or scan the scene."
+        + f"\n\nHere is contenxt on the robot: {state['robot_context']}"
+        + f"\n\nHere is context on the role: {state['role_context']}"
+        + f"\n\nHere is context from the employee handbook: {state['employee_context']}"
+        + f"\n\nHere is a list of locations that the robot can go to: {state['semantic_location_context']}",
         expected_output_format="A numbered list of steps.",
     )
     parser_agent = Agent(
@@ -190,10 +313,21 @@ def create_plan_for_unknown_task(state: State) -> Tuple[dict, State]:
     )
     task.add_solving_agent(parser_agent)
     plan = task.run()
+    chat_item = {
+        "content": f"Initial plan: \n\n{plan}",
+        "type": "text",
+        "role": "assistant",
+    }
+    return {"plan": plan}, state.append(chat_history=chat_item).update(plan=plan)
 
+
+@action(reads=["plan"], writes=["plan"])
+def create_robot_grounded_plan(state: State) -> Tuple[dict, State]:
+    plan = state["plan"]
     robot_grounded_plan = Task(
-        f"Map and consolidate the following steps to the Available Robot Skills and locations: \n{plan}"
-        + "Available Robot Skills: "
+        f"Map and consolidate the following steps to the Available Robot Skills and locations. \n{plan}"
+        + "\n\nTry to match the number of steps. Do not add any additional steps."
+        + "\n\nAvailable Robot Skills: "
         + "\n".join([f"{k} : {v['description']}" for k, v in SKILLS.items()])
         + "\n\nIf there is no match for that step, return 'False'. Be conservative in the matching. There shall only be one skill per step. Summarize if the plan if feasible at the end."
         + f"\n\nHere is a list of locations that the robot can go to: {list(SEMANTIC_LOCATIONS.keys())}"
@@ -209,7 +343,19 @@ def create_plan_for_unknown_task(state: State) -> Tuple[dict, State]:
     )
     robot_grounded_plan.add_solving_agent(robot_grounded_agent)
     robot_grounded_plan_output = robot_grounded_plan.run()
+    chat_item = {
+        "content": f"Robot grounded plan: \n\n{robot_grounded_plan_output}",
+        "type": "text",
+        "role": "assistant",
+    }
+    return {"plan": robot_grounded_plan_output}, state.append(
+        chat_history=chat_item
+    ).update(plan=robot_grounded_plan_output)
 
+
+@action(reads=["plan"], writes=["feasible"])
+def determine_if_plan_is_feasibile(state: State) -> Tuple[dict, State]:
+    robot_grounded_plan_output = state["plan"]
     extract_feasibility = Task(
         f"Given the following summary, return if the task is feasible. Summary: \n{robot_grounded_plan_output}",
         expected_output_format="True or False. Do not add any other information.",
@@ -234,7 +380,7 @@ def create_plan_for_unknown_task(state: State) -> Tuple[dict, State]:
     }
 
     chat_item = {
-        "content": f"Created initial plan:\n\n{result['task']}\n\nFeasible: `{result['feasible']}`",
+        "content": f"Feasible: `{result['feasible']}`",
         "type": "text",
         "role": "assistant",
     }
@@ -468,17 +614,6 @@ def execute_state_machine(state: State) -> Tuple[dict, State]:
             task_state = "done"
             current_state = "DONE"
 
-    # if task_state == "scan the scene":
-    #     task_state = "get_image"
-    #     state_machine[task_state_idx] = task_state
-    #     task[task_state_idx] = "get an image of the scene"
-    #     state_machine.insert(task_state_idx + 1, "ask_vla")
-    #     task.insert(
-    #         task_state_idx + 1, "ask the VLA to generate a description from the image"
-    #     )
-    #     state_machine.insert(task_state_idx + 2, "get_list_of_objects")
-    #     task.insert(task_state_idx + 2, "get a list of objects in the scene")
-
     result = {
         "task_state": task_state,
         "task_state_idx": task_state_idx,
@@ -529,18 +664,23 @@ def navigate_to_location(state: State) -> Tuple[dict, State]:
 
         if location is not None:
             location = get_closest_text(location, list(SEMANTIC_LOCATIONS.keys()))
-            navigate_to(
+            if not navigate_to(
                 SEMANTIC_LOCATIONS[location]["name"],
                 SEMANTIC_LOCATIONS[location]["location"],
-            )
-            wait_until_ready()
+            ):
+                raise Exception(f"Error navigating to location: {location}")
+
+            if not wait_until_ready():
+                raise Exception(f"Error waiting until ready: {location}")
+        content = f"Navigating to location: **{location}**"
     except Exception as e:
-        log.error(f"Error executing code: {e}")
+        log.error(f"Error: {e}")
         location = None
+        content = f"{e}"
 
     result = {"location": location}
     chat_item = {
-        "content": f"Navigating to location: **{location}**",
+        "content": content,
         "type": "text" if location is not None else "error",
         "role": "assistant",
     }
@@ -560,15 +700,24 @@ def scan_the_scene(state: State) -> Tuple[dict, State]:
 
 @action(reads=["state_machine"], writes=["image"])
 def get_image(state: State) -> Tuple[dict, State]:
-    image = get_image_from_sim()
-    # image = Image.open("shared/data/test1.png")
-    image = pil_to_b64(image)
-    result = {"image": image}
-    chat_item = {
-        "content": image,
-        "type": "image",
-        "role": "assistant",
-    }
+    try:
+        image = get_image_from_sim()
+        # image = Image.open("shared/data/test1.png")
+        image = pil_to_b64(image)
+        result = {"image": image}
+        chat_item = {
+            "content": image,
+            "type": "image",
+            "role": "assistant",
+        }
+    except Exception as e:
+        log.error(f"Error getting image: {e}")
+        result = {"image": None}
+        chat_item = {
+            "content": f"Error getting image: {e}",
+            "type": "text",
+            "role": "assistant",
+        }
     return result, state.append(chat_history=chat_item).update(**result)
 
 
@@ -776,20 +925,28 @@ def navigate_for_pick(state: State) -> Tuple[dict, State]:
     obj_to_grasp = state["obj_to_grasp"]
     location = get_closest_text(location, list(SEMANTIC_LOCATIONS.keys()))
     log.info(f"Pick and place {obj_to_grasp} at {location}")
-    if state["location"] != location:
-        log.info(f"Changing location from {state['location']} to {location}")
-        navigate_to(
-            SEMANTIC_LOCATIONS[location]["name"],
-            SEMANTIC_LOCATIONS[location]["location"],
-        )
-        if not wait_until_ready():
-            location = state["location"]
+    try:
+        if state["location"] != location:
+            log.info(f"Changing location from {state['location']} to {location}")
+            if not navigate_to(
+                SEMANTIC_LOCATIONS[location]["name"],
+                SEMANTIC_LOCATIONS[location]["location"],
+            ):
+                raise Exception(f"Error navigating to location: {location}")
+
+            if not wait_until_ready():
+                raise Exception(f"Error waiting until ready: {location}")
+        content = f"Navigated to **{location}** to pick **{obj_to_grasp}**"
+    except Exception as e:
+        log.error(f"Error navigating to location: {e}")
+        location = None
+        content = f"{e}"
 
     result = {"location": location}
 
     chat_item = {
-        "content": f"Navigated to **{location}** to pick **{obj_to_grasp}**",
-        "type": "text",
+        "content": content,
+        "type": "text" if location is not None else "error",
         "role": "assistant",
     }
     return result, state.append(chat_history=chat_item).update(**result)
@@ -801,24 +958,32 @@ def pick_object(state: State) -> Tuple[dict, State]:
     obj_to_grasp = state["obj_to_grasp"]
     print(f"Pick {obj_to_grasp}")
 
-    pick(obj_to_grasp)
+    try:
+        if not pick(obj_to_grasp):
+            raise Exception(f"Error picking object: {obj_to_grasp}")
 
-    pick_start_time = time.time()
-    obj_in_hand = None
-    while not obj_in_hand and time.time() - pick_start_time < PICK_TIMEOUT:
-        obj_in_hand = get_obj_in_hand()
-        time.sleep(0.1)
+        pick_start_time = time.time()
+        obj_in_hand = None
+        while not obj_in_hand and time.time() - pick_start_time < PICK_TIMEOUT:
+            obj_in_hand = get_obj_in_hand()
+            time.sleep(0.1)
 
-    if obj_in_hand:
-        print(f"Object in hand: {obj_in_hand}")
-        obj_to_grasp = None
+        if obj_in_hand:
+            print(f"Object in hand: {obj_in_hand}")
+            obj_to_grasp = None
 
-    wait_until_ready()
+        if not wait_until_ready():
+            raise Exception(f"Error waiting until ready: {obj_to_grasp}")
+        content = f"Picked **{obj_in_hand}**"
+    except Exception as e:
+        log.error(f"Error picking object: {e}")
+        obj_in_hand = None
+        content = f"{e}"
 
     result = {"obj_in_hand": obj_in_hand, "obj_to_grasp": obj_to_grasp}
 
     chat_item = {
-        "content": f"Picked **{obj_in_hand}**",
+        "content": content,
         "type": "text" if obj_in_hand else "error",
         "role": "assistant",
     }
@@ -842,14 +1007,24 @@ def navigate_for_place(state: State) -> Tuple[dict, State]:
 @action(reads=["obj_in_hand"], writes=["obj_in_hand"])
 def place_object(state: State) -> Tuple[dict, State]:
     obj_to_place = state["obj_in_hand"]
-    place(None)
-    wait_until_ready()
+    try:
+        if not place(None):
+            raise Exception(f"Error placing object: {obj_to_place}")
 
-    result = {"obj_in_hand": None}
+        if not wait_until_ready():
+            raise Exception(f"Error waiting until ready: {obj_to_place}")
+        obj_in_hand = None
+        content = f"Placed object **{obj_to_place}**"
+    except Exception as e:
+        log.error(f"Error placing object: {e}")
+        obj_in_hand = obj_to_place
+        content = f"{e}"
+
+    result = {"obj_in_hand": obj_in_hand}
 
     chat_item = {
-        "content": f"Placed object **{obj_to_place}**",
-        "type": "text",
+        "content": content,
+        "type": "text" if obj_in_hand is None else "error",
         "role": "assistant",
     }
     return result, state.append(chat_history=chat_item).update(**result)
@@ -878,10 +1053,22 @@ def create_error_response(state: State) -> Tuple[dict, State]:
             "type": "error",
             "role": "assistant",
         },
-        "current_state": "DONE",
+        "current_state": "FAILED",
         "code_attempts": 0,
     }
-    return result, state.update(**result)
+    return result, state.append(chat_history=result["response"]).update(**result)
+
+
+@action(reads=["current_state"], writes=["response", "current_state"])
+def finish_and_score_task(state: State) -> Tuple[dict, State]:
+    response = {
+        "content": "I'm done. Goodbye!",
+        "type": "text",
+        "role": "assistant",
+    }
+    current_state = "PENDING"
+    result = {"response": response, "current_state": current_state}
+    return result, state.append(chat_history=result["response"]).update(**result)
 
 
 @action(reads=["response", "current_state"], writes=["chat_history", "current_state"])
@@ -889,8 +1076,15 @@ def response(state: State) -> Tuple[dict, State]:
     if state["current_state"] == "DONE":
         current_state = "PENDING"
         response = {
-            "content": "I'm done. Goodbye!",
+            "content": "**Task execution successful :+1:**",
             "type": "text",
+            "role": "assistant",
+        }
+    elif state["current_state"] == "FAILED":
+        current_state = "FAILED"
+        response = {
+            "content": "**Task execution failed**\nLet me know if you'd like me to retry or just give me a new task.",
+            "type": "error",
             "role": "assistant",
         }
     else:
@@ -919,8 +1113,13 @@ def base_application(
         ApplicationBuilder()
         .with_actions(
             prompt=process_prompt,
-            determine_task=determine_task,
+            determine_if_task_in_skill_library=determine_if_task_in_skill_library,
             create_plan_for_unknown_task=create_plan_for_unknown_task,
+            get_closest_plans=get_closest_plans,
+            get_role_and_location_context=get_role_and_location_context,
+            create_initial_plan=create_initial_plan,
+            create_robot_grounded_plan=create_robot_grounded_plan,
+            determine_if_plan_is_feasibile=determine_if_plan_is_feasibile,
             convert_plan_to_steps=convert_plan_to_steps,
             create_state_machine=create_state_machine,
             execute_state_machine=execute_state_machine,
@@ -935,21 +1134,38 @@ def base_application(
             pick_object=pick_object,
             navigate_for_place=navigate_for_place,
             place_object=place_object,
+            finish_and_score_task=finish_and_score_task,
             create_error_response=create_error_response,
             prompt_for_more=prompt_for_more,
             response=response,
+            parse_update=parse_update,
         )
         .with_transitions(
-            ("prompt", "determine_task", default),
-            ("determine_task", "create_plan_for_unknown_task", when(task="unknown")),
-            ("create_plan_for_unknown_task", "convert_plan_to_steps", default),
+            ("prompt", "parse_update", when(current_state="FAILED")),
+            ("prompt", "determine_if_task_in_skill_library", default),
+            (
+                "determine_if_task_in_skill_library",
+                "create_plan_for_unknown_task",
+                when(task="unknown"),
+            ),
+            ("create_plan_for_unknown_task", "get_closest_plans", default),
+            ("get_closest_plans", "get_role_and_location_context", default),
+            ("get_role_and_location_context", "create_initial_plan", default),
+            ("create_initial_plan", "create_robot_grounded_plan", default),
+            ("create_robot_grounded_plan", "determine_if_plan_is_feasibile", default),
+            (
+                "determine_if_plan_is_feasibile",
+                "create_error_response",
+                when(feasible=False),
+            ),
+            ("determine_if_plan_is_feasibile", "convert_plan_to_steps", default),
             (
                 "convert_plan_to_steps",
                 "create_error_response",
                 when(task="unknown"),
             ),
             ("convert_plan_to_steps", "create_state_machine", default),
-            ("determine_task", "create_state_machine", default),
+            ("determine_if_task_in_skill_library", "create_state_machine", default),
             ("create_state_machine", "execute_state_machine", default),
             ("create_state_machine", "prompt_for_more", when(state_machine="unknown")),
             (
@@ -974,21 +1190,33 @@ def base_application(
                 when(task_state="pick_and_place"),
             ),
             ("pick_and_place", "navigate_for_pick", default),
+            ("navigate_for_pick", "create_error_response", when(location=None)),
             ("navigate_for_pick", "pick_object", default),
             ("pick_object", "create_error_response", when(obj_in_hand=None)),
             ("pick_object", "navigate_for_place", default),
             ("navigate_for_place", "place_object", default),
             ("place_object", "execute_state_machine", default),
-            ("execute_state_machine", "response", when(task_state="done")),
+            ("navigate_to_location", "create_error_response", when(location=None)),
             ("navigate_to_location", "execute_state_machine", default),
             ("scan_the_scene", "get_image", default),
+            ("get_image", "create_error_response", when(image=None)),
             ("get_image", "ask_vla", default),
             ("ask_vla", "get_list_of_objects", default),
             ("get_list_of_objects", "execute_state_machine", default),
+            ("execute_state_machine", "finish_and_score_task", when(task_state="done")),
+            ("finish_and_score_task", "prompt", default),
             ("response", "prompt", when(current_state="PENDING")),
             ("response", "execute_state_machine", when(current_state="RUNNING")),
             ("prompt_for_more", "response", default),
             ("create_error_response", "response", default),
+            ("response", "prompt", when(current_state="FAILED")),
+            (
+                "parse_update",
+                "determine_if_task_in_skill_library",
+                when(current_state="STARTING"),
+            ),
+            ("parse_update", "execute_state_machine", when(current_state="RUNNING")),
+            ("parse_update", "response", default),
         )
         # initializes from the tracking log if it does not already exist
         .initialize_from(
@@ -996,8 +1224,8 @@ def base_application(
             resume_at_next_action=True,  # always resume from entrypoint in the case of failure
             default_state={"chat_history": [], "current_state": "PENDING"},
             default_entrypoint="prompt",
-            # fork_from_app_id="4b1af935-3877-42e8-a832-05d575d9ccf4",
-            # fork_from_sequence_id=5,
+            # fork_from_app_id="c0ae11ec-6a68-4b07-b360-4913d78d409f",
+            # fork_from_sequence_id=12,
         )
         .with_hooks(*hooks)
         .with_tracker(tracker)
