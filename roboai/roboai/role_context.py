@@ -9,10 +9,11 @@ The robot is in a house environment where it does useful tasks such as cleaning 
 """
 
 EMPLOYEE_HANDBOOK = """
-Cleaning:
-- Remove objects and placing them in the cabinet
+This is the employee handbook for the robot. The following are basic instructions:
+    Cleaning:
+    - Remove objects and placing them in the cabinet
 
-Fetching:
-- Towels can be found in the kitchen
+    Fetching:
+    - Towels can be found in the kitchen
 
 """

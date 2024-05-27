@@ -95,3 +95,24 @@ def get_closest_text_sync(
     text: str, text_list: list[str], k: int = 1, threshold: float = 0.5
 ):
     return asyncio.run(get_closest_text(text, text_list, k, threshold))
+
+
+async def get_most_important(texts: list[str] | str, k: int = 1):
+    log_info(f"Getting most important text from: {texts}")
+    if isinstance(texts, list):
+        texts = " ".join(texts)
+
+    texts_embedding = await get_embedding(texts)
+
+    texts = texts.split()
+    vectors = [await get_embedding(text) for text in texts]
+
+    similarities = [cosine_similarity(texts_embedding, vector) for vector in vectors]
+    log_debug(f"Similarities: {similarities}")
+    closest_indices = np.argsort(similarities)[-k:]
+    log_info(f"Closest texts: {[texts[i] for i in closest_indices]}")
+    return [texts[i] for i in closest_indices]
+
+
+def get_most_important_sync(texts: list[str], k: int = 1):
+    return asyncio.run(get_most_important(texts, k))
