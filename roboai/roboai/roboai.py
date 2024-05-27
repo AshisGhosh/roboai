@@ -169,7 +169,7 @@ class PromptType(Enum):
         return NotImplemented
 
 
-@action(reads=["prompt"], writes=["current_state", "prompt_cls"])
+@action(reads=["prompt"], writes=["current_state", "prompt_cls", "task_state_idx"])
 def parse_prompt(state: State) -> Tuple[dict, State]:
     # determine the mode of the prompt
     prompt = state["prompt"]
@@ -188,6 +188,7 @@ def parse_prompt(state: State) -> Tuple[dict, State]:
         - Prompt: "Remember to ignore the red cup." Output: "update knowledge base"
         - Prompt: "You can find the items in the kitchen." Output: "update knowledge base"
         - Prompt: "The beer is in the fridge." Output: "update knowledge base"
+        - Prompt: "Beer goes in the fridge." Output: "update knowledge base"
         - Prompt: "I want to retry the task" Output: "retry existing task"
         - Prompt: "Don't pick up the items, just scan the scene" Output: "modify existing task"
         """,
@@ -206,6 +207,7 @@ def parse_prompt(state: State) -> Tuple[dict, State]:
     prompt_cls = get_closest_text(output, options)
     log.info(f"{LogColors.OKGREEN}Prompt classification: {prompt_cls}{LogColors.ENDC}")
 
+    task_state_idx = 0
     if prompt_cls == PromptType.PERFORM_NEW_TASK:
         current_state = "STARTING"
         content = "Starting a new task..."
@@ -218,6 +220,7 @@ def parse_prompt(state: State) -> Tuple[dict, State]:
     elif prompt_cls == PromptType.RETRY_EXISTING_TASK:
         current_state = "RUNNING"
         content = "Retrying the task..."
+        task_state_idx = state["task_state_idx"] - 1
         if state["current_state"] != "FAILED":
             current_state = "PENDING"
             prompt_cls = PromptType.UNKNOWN
@@ -233,6 +236,7 @@ def parse_prompt(state: State) -> Tuple[dict, State]:
     result = {
         "current_state": current_state,
         "prompt_cls": prompt_cls,
+        "task_state_idx": task_state_idx,
     }
 
     chat_item = {
@@ -453,7 +457,7 @@ def create_initial_plan(state: State) -> Tuple[dict, State]:
 @action(reads=["plan"], writes=["plan"])
 def create_robot_grounded_plan(state: State) -> Tuple[dict, State]:
     plan = state["plan"]
-    skills_verbose = "\n".join([f"{k} : {v}" for k, v in SKILLS.items()])
+    skills_verbose = "\n".join([f"{k} : {v['description']}" for k, v in SKILLS.items()])
     robot_grounded_plan = Task(
         f"""
         Map and consolidate the following steps to the Available Robot Skills and locations. 
@@ -482,7 +486,7 @@ def create_robot_grounded_plan(state: State) -> Tuple[dict, State]:
     robot_grounded_plan.add_solving_agent(robot_grounded_agent)
     robot_grounded_plan_output = robot_grounded_plan.run()
     chat_item = {
-        "content": f"Robot grounded plan: \n\n{robot_grounded_plan_output}",
+        "content": f"**Robot grounded plan**: \n\n{robot_grounded_plan_output}",
         "type": "text",
         "role": "assistant",
     }
@@ -710,7 +714,7 @@ def create_state_machine(state: State) -> Tuple[dict, State]:
 
     log.info(f"Task: {task}")
     log.info(f"State machine: {state_machine}")
-    output = "Here is the task:"
+    output = "Here is the consolidated task:"
     output += "\n\n"
     output += "```\n"
     output += "\n".join([f"{idx+1}. {step}" for idx, step in enumerate(task)])
@@ -777,39 +781,36 @@ def execute_state_machine(state: State) -> Tuple[dict, State]:
 def navigate_to_location(state: State) -> Tuple[dict, State]:
     step = state["task"][state["task_state_idx"]]
     extract_location = Task(
-        f"Given the following step, extract the location (e.g. kitchen), item (e.g. sink) or destination and return it as a string assigned to `location` in python. Here is the string to extract the location: \n{step}",
-        expected_output_format="""
-        ```python
-            location = "kitchen"
-        ```
+        f"""
+        Given the following step, extract the location (e.g. kitchen), item (e.g. sink) or destination and return it. 
+        Here is the string to extract the location: 
+        {step}
+
+        Examples:
+        - Text: "navigate to the kitchen" Output: "kitchen"
+
         """,
+        expected_output_format="A string representing the location, item or destination.",
     )
     extract_location_agent = Agent(
         name="Location Extractor",
         model=DEFAULT_MODEL,
         system_message="""
-        You are a helpful agent that concisely responds with only code.
+        You are a helpful agent that concisely responds.
         """,
     )
     extract_location.add_solving_agent(extract_location_agent)
     output = extract_location.run()
-    code = extract_code(output)
     try:
-        exec_vars = {}
-        exec_code(code, exec_vars)
-        log.info(exec_vars.get("location", None))
-        location = exec_vars.get("location", None)
+        location = get_closest_text(output, list(SEMANTIC_LOCATIONS.keys()))
+        if not navigate_to(
+            SEMANTIC_LOCATIONS[location]["name"],
+            SEMANTIC_LOCATIONS[location]["location"],
+        ):
+            raise Exception(f"Error navigating to location: {location}")
 
-        if location is not None:
-            location = get_closest_text(location, list(SEMANTIC_LOCATIONS.keys()))
-            if not navigate_to(
-                SEMANTIC_LOCATIONS[location]["name"],
-                SEMANTIC_LOCATIONS[location]["location"],
-            ):
-                raise Exception(f"Error navigating to location: {location}")
-
-            if not wait_until_ready():
-                raise Exception(f"Error navigating to location: {location}")
+        if not wait_until_ready():
+            raise Exception(f"Error navigating to location: {location}")
         content = f"Navigating to location: **{location}**"
     except Exception as e:
         log.error(f"Error: {e}")
@@ -934,13 +935,21 @@ def rollout_pick_and_place_plan(state: State) -> Tuple[dict, State]:
     rollout_task = Task(
         f"""Rollout a pick and place plan for the robot given the following objects:
         {state['observations']}
+        
         The robot and the objects are at {state['location']}
+        
+        Here are the locations the robot can go to: 
+        {list(SEMANTIC_LOCATIONS.keys())}
+
+        Here is additional knowledge you've learned:
+        {knowledge_base.get_knowledge_as_string()}
+
         Here is an example:
-        '{{'objects_on_table': ['cheese', 'milk']}}
+        '{{'objects_on_table': ['cheese', 'milk', 'book']}}
         The robot and the objects are at {{'counter'}}
         Output:
         ```
-            pick_and_place_tasks = ["Pick and place cheese at counter", "Pick and place milk at counter"]
+            pick_and_place_tasks = ["Pick cheese at counter and place at kitchen", "Pick milk at counter and place at kitchen", "Pick book at counter and place at shelf"]
         ```
         Don't use any functions, manually synthesize the pick and place tasks from the summary.
 
@@ -949,7 +958,7 @@ def rollout_pick_and_place_plan(state: State) -> Tuple[dict, State]:
         """,
         expected_output_format="""
         ```
-            pick_and_place_tasks = ["Pick and place object1 at location", "Pick and place object2 at location", "Pick and place object3 at location"]
+            pick_and_place_tasks = ["Pick object1 at location and place at destination", "Pick object2 at location and place at destination", "Pick object3 at location and place at destination"]
         ```
         """,
     )
@@ -1006,7 +1015,7 @@ def rollout_pick_and_place_plan(state: State) -> Tuple[dict, State]:
 
 @action(
     reads=["task", "state_machine", "task_state_idx", "location"],
-    writes=["obj_to_grasp", "obj_location"],
+    writes=["obj_to_grasp", "obj_location", "obj_destination"],
 )
 def pick_and_place(state: State) -> Tuple[dict, State]:
     get_object = Task(
@@ -1016,7 +1025,7 @@ def pick_and_place(state: State) -> Tuple[dict, State]:
 
         Here is an example:
             Here is the string to extract the object:
-                Pick and place cheese at counter
+                Pick cheese at counter and place in kitchen
             Output:
             ```
                 obj_to_grasp = "cheese"
@@ -1051,7 +1060,34 @@ def pick_and_place(state: State) -> Tuple[dict, State]:
     if "obj_location" in state:
         location = state["obj_location"]
 
-    result = {"obj_to_grasp": obj_to_grasp, "obj_location": location}
+    get_obj_destination = Task(
+        f"""Given the following, extract the destination as a string assigned to `obj_destination`.
+        Here is the string to extract the destination:
+        {state["task"][state["task_state_idx"]]}
+        
+        Example:
+            Here is the string to extract the destination:
+                Pick cheese at counter and place in kitchen
+            Output: 'kitchen'
+         """,
+        expected_output_format="String representing the destination.",
+    )
+    get_obj_destination_agent = Agent(
+        name="Destination Extractor",
+        model=DEFAULT_MODEL,
+        system_message="""
+        You are a helpful agent that concisely responds with variables.
+        """,
+    )
+    get_obj_destination.add_solving_agent(get_obj_destination_agent)
+    output = get_obj_destination.run()
+    destination = get_closest_text(output, list(SEMANTIC_LOCATIONS.keys()))
+
+    result = {
+        "obj_to_grasp": obj_to_grasp,
+        "obj_location": location,
+        "obj_destination": destination,
+    }
     chat_item = {
         "content": f"Pick and place **{obj_to_grasp}** at **{location}**",
         "type": "text",
@@ -1131,14 +1167,31 @@ def pick_object(state: State) -> Tuple[dict, State]:
     return result, state.append(chat_history=chat_item).update(**result)
 
 
-@action(reads=["location"], writes=["location"])
+@action(reads=["obj_destination", "location"], writes=["location"])
 def navigate_for_place(state: State) -> Tuple[dict, State]:
-    location = "unknown"
+    destination = state["obj_destination"]
+    try:
+        if state["location"] != destination:
+            log.info(f"Changing location from {state['location']} to {destination}")
+            if not navigate_to(
+                SEMANTIC_LOCATIONS[destination]["name"],
+                SEMANTIC_LOCATIONS[destination]["location"],
+            ):
+                raise Exception(f"Error navigating to destination: {destination}")
+
+            if not wait_until_ready():
+                raise Exception(f"Error navigating to destination: {destination}")
+        content = f"Navigated to **{destination}** to place **{state['obj_in_hand']}**"
+        location = destination
+    except Exception as e:
+        log.error(f"Error navigating to destination: {e}")
+        location = None
+        content = f"{e}"
 
     result = {"location": location}
 
     chat_item = {
-        "content": f"Navigated to place **{state['obj_in_hand']}**",
+        "content": content,
         "type": "text",
         "role": "assistant",
     }
@@ -1149,7 +1202,7 @@ def navigate_for_place(state: State) -> Tuple[dict, State]:
 def place_object(state: State) -> Tuple[dict, State]:
     obj_to_place = state["obj_in_hand"]
     try:
-        if not place(None):
+        if not place(SEMANTIC_LOCATIONS[state["location"]]["name"]):
             raise Exception(f"Error placing object: {obj_to_place}")
 
         if not wait_until_ready():
@@ -1389,8 +1442,8 @@ def base_application(
             resume_at_next_action=True,  # always resume from entrypoint in the case of failure
             default_state={"chat_history": [], "current_state": "PENDING"},
             default_entrypoint="prompt",
-            # fork_from_app_id="c0ae11ec-6a68-4b07-b360-4913d78d409f",
-            # fork_from_sequence_id=12,
+            # fork_from_app_id="670b9f83-d0fa-49ce-b396-dcaba416edc8",
+            # fork_from_sequence_id=55,
         )
         .with_hooks(*hooks)
         .with_tracker(tracker)

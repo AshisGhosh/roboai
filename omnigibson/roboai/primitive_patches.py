@@ -30,7 +30,30 @@ def _simplified_place_with_predicate(
     #     near_poses=near_poses,
     #     near_poses_threshold=near_poses_threshold,
     # )
-    obj_pose = (np.array([-0.7, 0.5, 0.5]), np.array([0.0, 0.0, 0.0, 1.0]))
+    place_locations = {
+        "table": {
+            "position": np.array([-0.7, 0.5, 0.5]),
+            "orientation": np.array([0.0, 0.0, 0.0, 1.0]),
+        },
+        "coffee_table_fqluyq_0": {
+            "position": np.array([-0.5, -1.1, 0.5]),
+            "orientation": np.array([0.0, 0.0, 0.0, 1.0]),
+        },
+        "bottom_cabinet_bamfsz_0": {
+            "position": np.array([-1.8, -0.5, 0.7]),
+            "orientation": np.array([0.0, 0.0, 0.0, 1.0]),
+        },
+        "fridge_xyejdx_0": {
+            "position": np.array([0.2, 3.2, 1.0]),
+            "orientation": np.array([0.0, 0.0, 0.0, 1.0]),
+        },
+        "trash_can_zotrbg_0": {
+            "position": np.array([-1.8, 2.65, 0.5]),
+            "orientation": np.array([0.0, 0.0, 0.0, 1.0]),
+        },
+    }
+    obj_pose = place_locations[obj.name]
+    obj_pose = (obj_pose["position"], obj_pose["orientation"])
 
     # Get close, release the object.
     # yield from self._navigate_if_needed(obj, pose_on_obj=obj_pose)

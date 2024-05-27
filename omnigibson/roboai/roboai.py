@@ -228,21 +228,19 @@ class SimWrapper:
         )
         config = yaml.load(open(config_filename, "r"), Loader=yaml.FullLoader)
 
-        # robot0_cfg = dict()
-        # robot0_cfg["type"] = "Tiago"
-        # robot0_cfg["obs_modalities"] = ["rgb", "depth", "seg_instance", "normal", "scan", "occupancy_grid"]
-        # robot0_cfg["action_type"] = "continuous"
-        # robot0_cfg["action_normalize"] = True
-
-        # config["robots"] = [robot0_cfg]
-
-        # Update it to create a custom environment and run some actions
-        # config["scene"]["scene_model"] = "Rs_int"
         config["scene"]["load_object_categories"] = [
             "floors",
             "ceilings",
             "walls",
             "coffee_table",
+            "bottom_cabinet",
+            "top_cabinet",
+            "floor_lamp",
+            "shelf",
+            "trash_can",
+            "counter_top",
+            "fridge",
+            "sink",
         ]
 
         # # SHOW TRAVERSABLE AREA
@@ -321,10 +319,19 @@ class SimWrapper:
         # Allow user to move camera more easily
         og.sim.enable_viewer_camera_teleoperation()
         cam = og.sim.viewer_camera
+
+        # Living Room View
         # camera pose: array([0.92048866, -5.66129052,  5.39363818]), array([0.44288347, 0.04140454, 0.08336682, 0.89173419])
+        # cam.set_position_orientation(
+        #     position=np.array([0.92048866, -5.66129052, 5.39363818]),
+        #     orientation=np.array([0.44288347, 0.04140454, 0.08336682, 0.89173419]),
+        # )
+
+        # Living Room + Kitchen View
+        # cam pose: (array([2.78592041, 0.56388298, 7.03105183]), array([0.15355086, 0.15665731, 0.69675768, 0.68294169]))
         cam.set_position_orientation(
-            position=np.array([0.92048866, -5.66129052, 5.39363818]),
-            orientation=np.array([0.44288347, 0.04140454, 0.08336682, 0.89173419]),
+            position=np.array([2.78592041, 0.56388298, 7.03105183]),
+            orientation=np.array([0.15355086, 0.15665731, 0.69675768, 0.68294169]),
         )
 
         # controller = StarterSemanticActionPrimitives(env, enable_head_tracking=False)
