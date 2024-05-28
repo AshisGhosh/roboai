@@ -1,5 +1,10 @@
 # RoboAI: Playground + Framework for applying LLM/VLMs to Robots in Sim
 
+### Update Videos:
+
+* **May 27 2024** - [VIDEO](https://www.youtube.com/watch?v=ycvPWq4JfEI) - Robot learning task relevant information and factoring that in the plan -- integrated with [OmniGibson](https://behavior.stanford.edu/omnigibson/) from Stanford/NVIDIA
+* **May 8 2024** - [VIDEO](https://www.youtube.com/watch?v=sg3PTz5q6kc) - Robot going from plain text to grasping attempt -- integrated with ROS2, MoveIt2, a grasping model and Isaac Sim. 
+
 ## Simulation Frameworks
 
 ### MuJoCo & Robosuite
