@@ -13,16 +13,16 @@ with rep.new_layer():
 
     
     def randomize_objects():
-        cracker_box = rep.create.from_usd(CRACKER_BOX, semantics=[('class', 'cracker box')])
+        cracker_box = rep.create.from_usd(CRACKER_BOX, semantics=[('class', 'red cracker box')])
         cracker_plane_samp = rep.create.plane(scale=1, position=(0, 0, 0.1), rotation=(90, 0, 0), visible=False)
 
-        sugar_box = rep.create.from_usd(SUGAR_BOX, semantics=[('class', 'sugar box')])
+        sugar_box = rep.create.from_usd(SUGAR_BOX, semantics=[('class', 'yellow and white sugar box')])
         sugar_plane_samp = rep.create.plane(scale=1, position=(0, 0, 0.085), rotation=(90, 0, 0), visible=False)
 
-        soup_can = rep.create.from_usd(SOUP_CAN, semantics=[('class', 'soup can')])
+        soup_can = rep.create.from_usd(SOUP_CAN, semantics=[('class', 'red and white soup can')])
         soup_plane_samp = rep.create.plane(scale=1, position=(0, 0, 0.05), rotation=(90, 0, 0), visible=False)
 
-        mustard_bottle = rep.create.from_usd(MUSTARD_BOTTLE, semantics=[('class', 'mustard bottle')])
+        mustard_bottle = rep.create.from_usd(MUSTARD_BOTTLE, semantics=[('class', 'yellow mustard bottle')])
         mustard_plane_samp = rep.create.plane(scale=1, position=(0, 0, 0.095), rotation=(90, 0, 0), visible=False)       
     
         with rep.utils.sequential():

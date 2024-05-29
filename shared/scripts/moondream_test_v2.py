@@ -53,3 +53,17 @@ else:
 
 
 print(json.dumps(results, indent=4))
+output_file = f"moondream2_responses_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+
+
+# Write the compiled data to a JSON file
+with open(output_file, 'w') as f:
+    json.dump(output_data, f, indent=4, default=default_converter)
+
+# Change file ownership to host user if script is running as root in docker
+if os.getuid() == 0:
+        host_uid = 1000  # Replace with actual host user ID
+        host_gid = 1000  # Replace with actual host group ID
+        os.chown(output_file, host_uid, host_gid)
+        
+print(f"Output written to {output_file}")

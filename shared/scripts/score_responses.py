@@ -1,6 +1,7 @@
 import argparse
 import datetime as dt
 import json
+import os
 import numpy as np
 from scipy.stats import kendalltau
 from fastembed import TextEmbedding
@@ -74,19 +75,19 @@ def calculate_semantic_similarity(response_names, gt_names, embed_model, similar
 
     # Calculate statistics for cosine similarities
     all_sem_score_stats = {
-        "mean": np.mean(all_cosine_similarities),
-        "std": np.std(all_cosine_similarities),
-        "min": np.min(all_cosine_similarities),
-        "max": np.max(all_cosine_similarities),
+        "mean": float(np.mean(all_cosine_similarities)),
+        "std": float(np.std(all_cosine_similarities)),
+        "min": float(np.min(all_cosine_similarities)),
+        "max": float(np.max(all_cosine_similarities)),
         "count": len(all_cosine_similarities)
     }
 
     # Calculate statistics for sem_score_matches
     sem_score_match_stats = {
-        "mean": np.mean([pair['cosine_similarity'] for pair in sem_score_matches]),
-        "std": np.std([pair['cosine_similarity'] for pair in sem_score_matches]),
-        "min": min([pair['cosine_similarity'] for pair in sem_score_matches], default=0),
-        "max": max([pair['cosine_similarity'] for pair in sem_score_matches], default=0),
+        "mean": float(np.mean([pair['cosine_similarity'] for pair in sem_score_matches])),
+        "std": float(np.std([pair['cosine_similarity'] for pair in sem_score_matches])),
+        "min": float(min([pair['cosine_similarity'] for pair in sem_score_matches], default=0)),
+        "max": float(max([pair['cosine_similarity'] for pair in sem_score_matches], default=0)),
         "count": len(sem_score_matches)
     }
     
@@ -116,8 +117,8 @@ def kendall_tau_normalized(sem_score_matches):
     normalized_tau = (tau + 1) / 2
 
     return {
-        "normalized_kendall_tau": normalized_tau,
-        "p_value": p_value,
+        "normalized_kendall_tau": float(normalized_tau),
+        "p_value": float(p_value),
         "matched_indices": matched_indices,
         "response_indices": response_indices
     }
@@ -182,8 +183,17 @@ def compute_aggregate_stats(scores):
         return aggregate_stats
     else:
         aggregate_stats = {}
+        
+def default_converter(obj):
+    if isinstance(obj, np.integer):
+        return int(obj)
+    elif isinstance(obj, np.floating):
+        return float(obj)
+    elif isinstance(obj, np.ndarray):
+        return obj.tolist()  # Convert numpy arrays to lists
+    raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
 
-def generate_json_output(scores, output_file='output.json'):
+def generate_json_output(scores, output_file):
     # Format the start time for the analysis
     analysis_start_time = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
@@ -199,14 +209,21 @@ def generate_json_output(scores, output_file='output.json'):
     
     # Write the compiled data to a JSON file
     with open(output_file, 'w') as f:
-        json.dump(output_data, f, indent=4)
+        json.dump(output_data, f, indent=4, default=default_converter)
     
+    # Change file ownership to host user if script is running as root in docker
+    if os.getuid() == 0:
+            host_uid = 1000  # Replace with actual host user ID
+            host_gid = 1000  # Replace with actual host group ID
+            os.chown(output_file, host_uid, host_gid)
+            
     print(f"Output written to {output_file}")
 
 def main(model_responses_file, gt_values_file):
     model_responses = load_json_file(model_responses_file)
     gt_values = load_json_file(gt_values_file)
     embed_model = TextEmbedding("mixedbread-ai/mxbai-embed-large-v1")
+    output_file = f"response_scores_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
     scores = {}  # This will store the evaluation results similarly to 'results'
     for filename, response_data in model_responses.items():
@@ -216,7 +233,7 @@ def main(model_responses_file, gt_values_file):
         scores[filename] = evaluation_result
 
     # Generate output JSON file with results and statistics
-    generate_json_output(scores)
+    generate_json_output(scores, output_file)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Evaluate model responses against ground truth.")
