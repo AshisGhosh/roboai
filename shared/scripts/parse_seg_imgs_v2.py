@@ -4,6 +4,7 @@ import numpy as np
 import os
 import tarfile
 import argparse
+import datetime as dt
 from collections import Counter
 
 def find_leftmost_pixel(mask, color):
@@ -13,6 +14,21 @@ def find_leftmost_pixel(mask, color):
         return float('inf')
     x_indices = np.where(matched_pixels)[1]
     return np.min(x_indices)  # Return the smallest x-index (leftmost pixel)
+
+def punctuator(word):
+    """
+    Cleans up object name strings
+    
+    (Basicwriter from Nvidia Omniverse Replicator can't take punctuation in the semantic fields.)
+    """
+    replacement_dict = {
+        "cheezit": "Cheez-It",
+        "domino": "Domino",
+        "campbells": "Campbell's",
+        "frenchs": "French's"
+    }
+    words = word.split()
+    return ' '.join(replacement_dict.get(w.lower(), w) for w in words) + '.'
 
 def process_image(base_name, image_file, archive):
     print(f"Processing image: {base_name}")  # Debug: Processing image
@@ -61,10 +77,11 @@ def process_image(base_name, image_file, archive):
 
     objects_left_to_right.sort()
     ordered_objects = [obj[1] for obj in objects_left_to_right]
+    corrected_objects = [punctuator(obj) for obj in ordered_objects]
 
-    print(f"Found objects for rgb_{base_name}.png: {ordered_objects}")  # Debug: Found objects
+    print(f"Corrected objects for rgb_{base_name}.png: {corrected_objects}")  # Debug: Found objects
 
-    return {f"rgb_{base_name}.png": {"objects_left_to_right": ordered_objects}}
+    return {f"rgb_{base_name}.png": {"objects_left_to_right": corrected_objects}}
 
 def process_images_from_folder(image_folder):
     result = {}
@@ -93,8 +110,13 @@ def main(args):
         ordered_objects = process_images_from_tar(args.path)
     else:
         raise ValueError("The path must be a directory or a tarball.")
+    
+    output_file = f"gt_responses_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    with open(output_file, 'w') as f:
+        json.dump(ordered_objects, f, indent=4)    
     print(json.dumps(ordered_objects, indent=4))
-
+    print(f"Output written to {output_file}")
+    
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Process a folder or tarball of synthetic images for object ordering.')
     parser.add_argument('path', type=str, help='The path to the dataset directory or tarball.')

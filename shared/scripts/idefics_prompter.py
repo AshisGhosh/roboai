@@ -9,6 +9,11 @@ import torch
 from transformers import AutoModelForVision2Seq, AutoProcessor, BitsAndBytesConfig
 
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Process an image file or a directory of images.")
+    parser.add_argument('path', type=str, help='Path to an image file or a directory containing images.')
+    return parser.parse_args()
+
 def get_timestamp():
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -51,10 +56,14 @@ def process_images(image_paths, processor, model, device):
             results[image_path.name] = {"error": str(e)}
     return results
 
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Process an image file or a directory of images.")
-    parser.add_argument('path', type=str, help='Path to an image file or a directory containing images.')
-    return parser.parse_args()
+def adjust_file_permissions(output_file):
+    """
+    Fixes file permission when running script as root in docker
+    """
+    if os.getuid() == 0:  # Running as root
+        host_uid, host_gid = 1000, 1000  # Default IDs, adjust as necessary
+        os.chown(output_file, host_uid, host_gid)
+        print(f"File ownership changed for {output_file}")
 
 def main():
     args = parse_arguments()
@@ -82,6 +91,9 @@ def main():
     with open(output_file, 'w') as f:
         json.dump(output_data, f, indent=4)
     print(f"Output written to {output_file}")
+    # Change file ownership to host user if script is running as root in docker
+    adjust_file_permissions(output_file)
+
 
 if __name__ == "__main__":
     main()

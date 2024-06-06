@@ -25,12 +25,12 @@ def set_clean_responses_model(model_id):
     """
     if model_id == 'vikhyatk/moondream2':
         return clean_responses_moondream2
-    elif model_id == 'idefics2-8b-AWQ':
-        pass
+    elif model_id == 'HuggingFaceM4/idefics2-8b-chatty':
+        return clean_responses_idefics2
     elif model_id == 'paligemma-3b-mix-448':
-        pass
-    elif model_id == '':
-        pass
+        return clean_responses_paligemma
+    elif model_id == 'llava:latest':
+        return clean_responses_llava
     else:
         raise RuntimeError(f"Input json is incompatible or uses an unsupported model. Provided model: {model_id}")
 
@@ -44,15 +44,28 @@ def clean_responses_moondream2(response_string):
 
 def clean_responses_idefics2(response_string):
     """
-    Parse idecfics2 response strings and isolate object names by splitting on commas,
-    also removing periods and the word 'and' following oxford comma.
+    Parse idecfics2 response strings and isolate object names by removing prefixed text up to 'are',
+    then splitting on commas, and also removing periods and the word 'and' following oxford comma.
     """
-    items = response_string.replace('.', '').replace(', and', ',').split(', ')
+    # Find the position of ' are' and slice the string from that position plus the length of ' are'
+    start_idx = response_string.find(' are') + len(' are')
+    processed_string = response_string[start_idx:]
+    
+    # Clean and split the string as before
+    items = processed_string.replace('.', '').replace(', and', ',').split(', ')
     return [item.strip() for item in items if item]
 
 def clean_responses_llava(response_string):
     """
     Parse llava response strings and isolate object names from json format.
+    """
+    items = response_string.replace('.', '').replace(', and', ',').split(', ')
+    return [item.strip() for item in items if item]
+
+def clean_responses_paligemma(response_string):
+    """
+    Parse paligemma response strings and isolate object names by splitting on commas,
+    also removing periods and the word 'and' following oxford comma
     """
     items = response_string.replace('.', '').replace(', and', ',').split(', ')
     return [item.strip() for item in items if item]
@@ -121,23 +134,27 @@ def calculate_semantic_similarity(response_names, gt_names, embed_model, similar
                           for idx, name in enumerate(response_names) if idx not in matched_response_indices]
 
     # Calculate statistics for cosine similarities
-    all_sem_score_stats = {
-        "mean": float(np.mean(all_cosine_similarities)),
-        "std": float(np.std(all_cosine_similarities)),
-        "min": float(np.min(all_cosine_similarities)),
-        "max": float(np.max(all_cosine_similarities)),
-        "count": len(all_cosine_similarities)
-    }
+    if not all_cosine_similarities:  # Check if the array is empty
+        all_sem_score_stats = {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0, "count": 0}
+    else:
+        all_sem_score_stats = {
+            "mean": float(np.mean(all_cosine_similarities)),
+            "std": float(np.std(all_cosine_similarities)),
+            "min": float(np.min(all_cosine_similarities)),
+            "max": float(np.max(all_cosine_similarities)),
+            "count": len(all_cosine_similarities)
+        }
 
-    # Calculate statistics for sem_score_matches
-    sem_score_match_stats = {
-        "mean": float(np.mean([pair['cosine_similarity'] for pair in sem_score_matches])),
-        "std": float(np.std([pair['cosine_similarity'] for pair in sem_score_matches])),
-        "min": float(min([pair['cosine_similarity'] for pair in sem_score_matches], default=0)),
-        "max": float(max([pair['cosine_similarity'] for pair in sem_score_matches], default=0)),
-        "count": len(sem_score_matches)
-    }
-    
+    if not sem_score_matches:  # Check if no matches were found
+        sem_score_match_stats = {"mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0, "count": 0}
+    else:
+        sem_score_match_stats = {
+            "mean": float(np.mean([pair['cosine_similarity'] for pair in sem_score_matches])),
+            "std": float(np.std([pair['cosine_similarity'] for pair in sem_score_matches])),
+            "min": float(min([pair['cosine_similarity'] for pair in sem_score_matches], default=0)),
+            "max": float(max([pair['cosine_similarity'] for pair in sem_score_matches], default=0)),
+            "count": len(sem_score_matches)
+        }
     return sem_score_matches, unpaired_responses, sem_score_match_stats, all_sem_scores, all_sem_score_stats
 
 def calculate_count_accuracy(response_count, gt_count):
@@ -158,6 +175,26 @@ def kendall_tau_normalized(sem_score_matches):
     """
     matched_indices = [score["gt_name_index"] for score in sem_score_matches]
     response_indices = [score["response_idx"] for score in sem_score_matches]
+    
+    # Handling single element or no element scenarios
+    if len(matched_indices) < 2 or len(response_indices) < 2:
+        if len(matched_indices) == 1 and len(response_indices) == 1:
+            # Single match, could consider it as perfect or undefined.
+            return {
+                "normalized_kendall_tau": 1.0,  # Consider perfect correlation if only one matched pair exists
+                "p_value": 0.0,
+                "matched_indices": matched_indices,
+                "response_indices": response_indices
+            }
+        else:
+            # Not enough data to calculate Kendall's tau, return NaN
+            return {
+                "normalized_kendall_tau": 0.0,
+                "p_value": 1.0,
+                "matched_indices": matched_indices,
+                "response_indices": response_indices,
+                "reason": "Insufficient data for Kendall's tau calculation"
+            }
     
     # Calculate Kendall's tau
     tau, p_value = kendalltau(matched_indices, response_indices)
@@ -181,7 +218,10 @@ def evaluate_outputs(response_names, gt_names, embed_model):
     order_accuracy_result = kendall_tau_normalized(sem_score_matches)
     count_accuracy_score = calculate_count_accuracy(len(response_names), len(gt_names))
     
-    final_score = (order_accuracy_result["normalized_kendall_tau"] * count_accuracy_score * sem_score_match_stats["mean"])
+    mean_sem_score = sem_score_match_stats["mean"] if sem_score_match_stats["mean"] is not None else 0
+    normalized_kendall_tau = order_accuracy_result["normalized_kendall_tau"] if order_accuracy_result["normalized_kendall_tau"] is not None else 0
+    
+    final_score = (normalized_kendall_tau * count_accuracy_score * mean_sem_score)
     
     return {
         "response_names": response_names,
@@ -195,7 +235,22 @@ def evaluate_outputs(response_names, gt_names, embed_model):
         "all_sem_score_stats": all_sem_score_stats,
         "final_score": final_score
     }
+
+def compute_statistics(data):
+    # Filter out None values from the data list
+    filtered_data = [x for x in data if x is not None]
     
+    if not filtered_data:
+        return {"mean": 0, "std": 0, "min": 0, "max": 0, "count": 0}  # Return 0 or another appropriate value if all data is None or list is empty
+
+    return {
+        "mean": np.mean(filtered_data),
+        "std": np.std(filtered_data),
+        "min": np.min(filtered_data),
+        "max": np.max(filtered_data),
+        "count": len(filtered_data)
+    }
+
 def compute_aggregate_stats(scores):
     if scores:
         # Collect scores for each metric
@@ -209,16 +264,6 @@ def compute_aggregate_stats(scores):
             average_semantic_scores.append(score_data["sem_score_match_stats"]["mean"])
             count_accuracy_scores.append(score_data["count_accuracy"])
             overall_performance_scores.append(score_data["final_score"])
-
-        # Calculate statistics
-        def compute_statistics(data):
-            return {
-                "mean": np.mean(data),
-                "std": np.std(data),
-                "min": np.min(data),
-                "max": np.max(data),
-                "count": len(data)
-            }
 
         # Calculate overall statistics
         order_accuracy_statistics = compute_statistics(order_accuracy_scores)
