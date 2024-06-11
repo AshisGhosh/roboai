@@ -28,13 +28,13 @@ def initialize_model(device, model_id, revision):
     tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
     return model, tokenizer
 
-def process_images(image_paths, model, tokenizer):
+def process_images(image_paths, model, prompt, tokenizer):
     results = {}
     for image_path in image_paths:
         try:
             image = Image.open(image_path)
             enc_image = model.encode_image(image)
-            answer = model.answer_question(enc_image, "Name the objects on the table from left to right.", tokenizer)
+            answer = model.answer_question(enc_image, prompt, tokenizer)
             results[image_path.name] = {"response": answer}
             print(f"{image_path.name}: {answer}")
         except Exception as e:
@@ -56,6 +56,7 @@ def main():
     device = "cuda:0"
     model_id = "vikhyatk/moondream2"
     revision = "2024-05-08"
+    prompt= "Name the objects on the table from left to right."
     model, tokenizer = initialize_model(device, model_id, revision)
 
     start_time = get_timestamp()
@@ -64,16 +65,16 @@ def main():
     if path.exists():
         if path.is_dir():
             image_paths = sorted(list(path.glob('rgb_????.png')))
-            results = process_images(image_paths, model, tokenizer)
+            results = process_images(image_paths, model, prompt, tokenizer)
         elif path.is_file() and re.match(r'rgb_\d{4}\.png', path.name):
-            results = process_print([path], model, tokenizer)
+            results = process_print([path], model, prompt, tokenizer)
         else:
             print("The file or directory does not match the expected pattern.")
     else:
         print("The provided path does not exist.")
 
     end_time = get_timestamp()
-    output_data = {"model_id": model_id, "start_time": start_time, "end_time": end_time, "responses": results}
+    output_data = {"model_id": model_id, "prompt": prompt, "start_time": start_time, "end_time": end_time, "responses": results}
     output_file = f"moondream2_responses_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(output_file, 'w') as f:
         json.dump(output_data, f, indent=4)

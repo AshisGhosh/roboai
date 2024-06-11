@@ -1,6 +1,8 @@
 import argparse
 import json
 import re
+import io
+import os
 import base64
 from pathlib import Path
 from PIL import Image
@@ -34,15 +36,19 @@ def unload_model(model_id):
     except Exception as err:
         print(f"Unexpected error during model unload: {err}")
 
-def encode_image_to_base64(file_path):
-    with open(file_path, "rb") as image_file:
-        encoded_string = base64.b64encode(image_file.read()).decode('utf-8')
+def encode_image_to_base64(resized_image):
+    buffered = io.BytesIO()
+    resized_image.save(buffered, format="PNG")
+    encoded_string = base64.b64encode(buffered.getvalue()).decode('utf-8')
     return encoded_string
 
 def get_caption_with_image(image_path, model_id, prompt):
     try:
-        image_base64 = encode_image_to_base64(image_path)
-        response = ollama.generate(model=model_id, prompt=prompt, format="json", stream=False, images=[image_base64])
+        with Image.open(image_path) as img:
+            resized_image = img.resize((672, 672))  # max rez for llava
+            resized_image_base64 = encode_image_to_base64(resized_image)
+        response = ollama.generate(model=model_id, prompt=prompt, format="json", stream=False, images=[resized_image_base64])
+        print(f"{image_path.name}: {response}")
         return response
     except ollama.ResponseError as e:
         print(f"ollama Response Error: {e.error}")
@@ -69,9 +75,8 @@ def adjust_file_permissions(output_file):
 
 def main():
     model_id = "llava:latest"
-    prompt = """Name the objects on the table from left to right as a list. Respond using JSON. 
-    ex: 
-    {"objects_left_to_right:" ["first object from left", "next object from left", "last object from left"]}"""
+    prompt = """Name the objects on the table from left to right. Respond using JSON. 
+    response format: {"objects_left_to_right:" ["<first object from left>", "<next object from left>", "<last object from left>"]}"""
 
     start_time = get_timestamp()
     path = Path(args.path)
@@ -93,7 +98,7 @@ def main():
         print("The provided path does not exist or is not a file/directory.")
 
     end_time = get_timestamp()
-    output_data = {"model_id": model_id, "start_time": start_time, "end_time": end_time, "responses": results}
+    output_data = {"model_id": model_id, "prompt": prompt, "start_time": start_time, "end_time": end_time, "responses": results}
     output_file = f"llava_responses_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(output_file, 'w') as f:
         json.dump(output_data, f, indent=4)

@@ -28,7 +28,8 @@ def punctuator(word):
         "frenchs": "French's"
     }
     words = word.split()
-    return ' '.join(replacement_dict.get(w.lower(), w) for w in words) + '.'
+    cleaned_words = [replacement_dict.get(w.lower(), w) for w in words]
+    return ' '.join(cleaned_words)
 
 def process_image(base_name, image_file, archive):
     print(f"Processing image: {base_name}")  # Debug: Processing image

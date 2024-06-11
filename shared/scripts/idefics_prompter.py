@@ -40,7 +40,7 @@ def process_images(image_paths, processor, model, device):
         try:
             image = Image.open(image_path)
             messages = [
-                {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": "Name the objects on the table from left to right."}]}
+                {"role": "user", "content": [{"type": "image"}, {"type": "text", "text": prompt}]}
             ]
             prompt = processor.apply_chat_template(messages, add_generation_prompt=True)
             inputs = processor(text=prompt, images=[image], return_tensors="pt")
@@ -69,6 +69,7 @@ def main():
     args = parse_arguments()
     device = "cuda:0"
     model_id = "HuggingFaceM4/idefics2-8b-chatty"
+    prompt = "Name the objects on the table from left to right."
     processor, model = initialize_model(device, model_id)
 
     start_time = get_timestamp()
@@ -77,16 +78,16 @@ def main():
     if path.exists():
         if path.is_dir():
             image_paths = sorted(list(path.glob('rgb_????.png')))
-            results = process_images(image_paths, processor, model, device)
+            results = process_images(image_paths, processor, model, prompt, device)
         elif path.is_file() and re.match(r'rgb_\d{4}\.png', path.name):
-            results = process_images([path], processor, model, device)
+            results = process_images([path], processor, model, prompt, device)
         else:
             print("The file or directory does not match the expected pattern.")
     else:
         print("The provided path does not exist.")
 
     end_time = get_timestamp()
-    output_data = {"model_id": model_id, "start_time": start_time, "end_time": end_time, "responses": results}
+    output_data = {"model_id": model_id, "prompt": prompt, "start_time": start_time, "end_time": end_time, "responses": results}
     output_file = f"idefics2_responses_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(output_file, 'w') as f:
         json.dump(output_data, f, indent=4)

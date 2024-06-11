@@ -30,12 +30,11 @@ def initialize_model(device, dtype, model_id):
     processor = AutoProcessor.from_pretrained(model_id)
     return processor, model
 
-def process_images(image_paths, processor, model):
+def process_images(image_paths, processor, prompt, model):
     results = {}
     for image_path in image_paths:
         try:
             image = Image.open(image_path).convert("RGB")
-            prompt = "Name the objects on the table from left to right."
             model_inputs = processor(text=prompt, images=image, return_tensors="pt").to(model.device)
             input_len = model_inputs["input_ids"].shape[-1]
             with torch.inference_mode():
@@ -64,6 +63,7 @@ def main():
     device = "cuda:0"
     dtype = torch.bfloat16
     model_id = "../models/paligemma-3b-mix-448"
+    prompt = "Name the objects on the table from left to right."
     processor, model = initialize_model(device, dtype, model_id)
 
     start_time = get_timestamp()
@@ -72,16 +72,16 @@ def main():
     if path.exists():
         if path.is_dir():
             image_paths = sorted(list(path.glob('rgb_????.png')))
-            results = process_images(image_paths, processor, model)
+            results = process_images(image_paths, processor, prompt, model)
         elif path.is_file() and re.match(r'rgb_\d{4}\.png', path.name):
-            results = process_images([path], processor, model)
+            results = process_images([path], processor, prompt, model)
         else:
             print("The file or directory does not match the expected pattern.")
     else:
         print("The provided path does not exist.")
 
     end_time = get_timestamp()
-    output_data = {"model_id": model_id, "start_time": start_time, "end_time": end_time, "responses": results}
+    output_data = {"model_id": model_id, "prompt": prompt, "start_time": start_time, "end_time": end_time, "responses": results}
     output_file = f"paligemma_responses_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     with open(output_file, 'w') as f:
         json.dump(output_data, f, indent=4)

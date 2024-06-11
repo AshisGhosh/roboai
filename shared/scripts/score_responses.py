@@ -3,14 +3,29 @@ import datetime as dt
 import json
 import os
 import numpy as np
+from tqdm import tqdm
 from scipy.stats import kendalltau
 from fastembed import TextEmbedding
 
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Evaluate model responses against ground truth.")
-    parser.add_argument('model_responses_file', type=str, help='Path to the model responses JSON file.')
-    parser.add_argument('gt_values_file', type=str, help='Path to the ground truth JSON file.')
+    parser.add_argument('-m', '--model_responses_files', type=str, nargs='+', required=True,
+                        help='Path to the model responses JSON files.')
+    parser.add_argument('-g', '--gt_values_file', type=str, required=True,
+                        help='Path to the ground truth JSON file.')
     return parser.parse_args()
+
+def multi_responses_files_loop(model_files, gt_file, embed_model):
+    """
+    Process each model response file against a ground truth file.
+    """
+    # Create a tqdm progress bar
+    progress_bar = tqdm(model_files, desc="Initializing")
+
+    for model_file in progress_bar:
+        # Set the description to show the current file being processed
+        progress_bar.set_description(f"Processing {model_file}")
+        main(model_file, gt_file, embed_model)
 
 def load_json_file(filepath):
     """
@@ -44,8 +59,9 @@ def clean_responses_moondream2(response_string):
 
 def clean_responses_idefics2(response_string):
     """
-    Parse idecfics2 response strings and isolate object names by removing prefixed text up to 'are',
-    then splitting on commas, and also removing periods and the word 'and' following oxford comma.
+    Parse idecfics2 response strings and isolate object names by removing 
+    prefixed text up to 'are', then splitting on commas, and also removing 
+    periods and the word 'and' following oxford comma.
     """
     # Find the position of ' are' and slice the string from that position plus the length of ' are'
     start_idx = response_string.find(' are') + len(' are')
@@ -70,21 +86,40 @@ def clean_responses_paligemma(response_string):
     items = response_string.replace('.', '').replace(', and', ',').split(', ')
     return [item.strip() for item in items if item]
 
+def compare_responses_to_gt(model_responses, gt_json, embed_model, clean_responses_func):
+    """
+    Parses and extracts strings for object names in responses and gt values, then sends them
+    through the scoring evalution process
+    """
+    scores = {}
+    for filename, response_data in model_responses.items():
+        response_names = clean_responses_func(response_data['response'])
+        gt_names = gt_json.get(filename, {}).get('objects_left_to_right', [])
+        evaluation_result = evaluate_outputs(response_names, gt_names, embed_model)
+        scores[filename] = evaluation_result
+    return scores
+
 def cosine_similarity_np(vec1, vec2):
     """
     Compute cosine similarity between two vectors using numpy.
     """
     return np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
 
-def calculate_semantic_similarity(response_names, gt_names, embed_model, similarity_threshold=0.50):
+def calculate_semantic_similarity(
+    response_names,
+    gt_names,
+    embed_model,
+    similarity_threshold=0.50
+    ):
     """
-    For each response name, find the ground truth name with the highest cosine similarity between
-    embedded strings (semscore).
+    For each response name, find the ground truth name with the highest cosine
+    similarity between embedded strings (semscore).
     
-    Any response names that do not have a matching ground truth >0.50 are reported as unpaired,
-    usually when len(response_names) > len(gt_names). 
+    Any response names that do not have a matching ground truth >0.50 are 
+    reported as unpaired, usually when len(response_names) > len(gt_names). 
     
-    Returns best matches (with stats), unpaired responses, and all semscore comparisons (with stats)
+    Returns best matches (with stats), unpaired responses, and all semscore 
+    comparisons (with stats)
     """
     sem_score_matches = []
     unpaired_responses = []
@@ -159,7 +194,8 @@ def calculate_semantic_similarity(response_names, gt_names, embed_model, similar
 
 def calculate_count_accuracy(response_count, gt_count):
     """
-    Calculate the count score based on the difference between the response and ground truth counts
+    Calculate the count score based on the difference between the response and
+    ground truth counts
     """
     if gt_count != 0:
         count_score = 1 - (abs(response_count - gt_count) / gt_count)
@@ -170,8 +206,8 @@ def calculate_count_accuracy(response_count, gt_count):
 
 def kendall_tau_normalized(sem_score_matches):
     """
-    Calculates normalized Kendall's tau correlation between the ground truth indices
-    and the response indices based on semantically matched objects.
+    Calculates normalized Kendall's tau correlation between the ground truth
+    indices and the response indices based on semantically matched objects.
     """
     matched_indices = [score["gt_name_index"] for score in sem_score_matches]
     response_indices = [score["response_idx"] for score in sem_score_matches]
@@ -211,15 +247,21 @@ def kendall_tau_normalized(sem_score_matches):
 
 def evaluate_outputs(response_names, gt_names, embed_model):
     """
-    Scores responses vs gt values on object name semscore (embedded string cosine similarity),
-    object ordering accuracy, object count accuracy.
+    Scores responses vs gt values on object name semscore (embedded string
+    cosine similarity), object ordering accuracy, object count accuracy.
     """
-    sem_score_matches, unpaired_responses, sem_score_match_stats, all_sem_scores, all_sem_score_stats = calculate_semantic_similarity(response_names, gt_names, embed_model)
+    sem_score_results = calculate_semantic_similarity(response_names, gt_names, embed_model)
+    sem_score_matches, unpaired_responses, sem_score_match_stats, \
+        all_sem_scores, all_sem_score_stats = sem_score_results
+    
     order_accuracy_result = kendall_tau_normalized(sem_score_matches)
+    
     count_accuracy_score = calculate_count_accuracy(len(response_names), len(gt_names))
     
-    mean_sem_score = sem_score_match_stats["mean"] if sem_score_match_stats["mean"] is not None else 0
-    normalized_kendall_tau = order_accuracy_result["normalized_kendall_tau"] if order_accuracy_result["normalized_kendall_tau"] is not None else 0
+    mean_sem_score = sem_score_match_stats["mean"] \
+        if sem_score_match_stats["mean"] is not None else 0
+    normalized_kendall_tau = order_accuracy_result["normalized_kendall_tau"] \
+        if order_accuracy_result["normalized_kendall_tau"] is not None else 0
     
     final_score = (normalized_kendall_tau * count_accuracy_score * mean_sem_score)
     
@@ -241,7 +283,7 @@ def compute_statistics(data):
     filtered_data = [x for x in data if x is not None]
     
     if not filtered_data:
-        return {"mean": 0, "std": 0, "min": 0, "max": 0, "count": 0}  # Return 0 or another appropriate value if all data is None or list is empty
+        return {"mean": 0, "std": 0, "min": 0, "max": 0, "count": 0}
 
     return {
         "mean": np.mean(filtered_data),
@@ -293,9 +335,16 @@ def default_converter(obj):
         return float(obj)
     elif isinstance(obj, np.ndarray):
         return obj.tolist()  # Convert numpy arrays to lists
+    elif isinstance(obj, dt.timedelta):
+        return obj.total_seconds()
     raise TypeError(f'Object of type {obj.__class__.__name__} is not JSON serializable')
 
-def generate_json_output(model_id, model_responses_file, gt_values_file, scores, output_file):
+def generate_json_output(
+        model_id, prompt, model_responses_file,
+        gt_values_file, responses_start_time,
+        responses_end_time, total_generation_time, 
+        avg_generation_time, scores, output_file
+        ):
     """
     Outputs a json file with scores for model reponses vs gt
     """
@@ -309,10 +358,16 @@ def generate_json_output(model_id, model_responses_file, gt_values_file, scores,
     output_data = {
         "analysis_start_time": analysis_start_time,
         "model_id" : model_id,
+        "prompt": prompt,
         "model_json": model_responses_file,
         "gt_json": gt_values_file,
-        "scores": scores,
-        "aggregate_stats": aggregate_stats
+        "n_images": len(scores),
+        "responses_start_time": responses_start_time,
+        "responses_end_time": responses_end_time,
+        "total_generation_time": total_generation_time,
+        "avg_generation_time": avg_generation_time,
+        "aggregate_stats": aggregate_stats,
+        "scores": scores
     }
     
     # Write the compiled data to a JSON file
@@ -333,34 +388,50 @@ def adjust_file_permissions(output_file):
         os.chown(output_file, host_uid, host_gid)
         print(f"File ownership changed for {output_file}")
 
-def compare_responses_to_gt(model_responses, gt_json, embed_model, clean_responses_func):
-    """
-    Parses and extracts strings for object names in responses and gt values, then sends them
-    through the scoring evalution process
-    """
-    scores = {}
-    for filename, response_data in model_responses.items():
-        response_names = clean_responses_func(response_data['response'])
-        gt_names = gt_json.get(filename, {}).get('objects_left_to_right', [])
-        evaluation_result = evaluate_outputs(response_names, gt_names, embed_model)
-        scores[filename] = evaluation_result
-    return scores
+def get_duration(start_time, end_time):
+    start_dt = dt.datetime.strptime(start_time, '%Y-%m-%d %H:%M:%S')
+    end_dt = dt.datetime.strptime(end_time, '%Y-%m-%d %H:%M:%S')
+    return end_dt - start_dt
 
-def main(model_responses_file, gt_values_file):
+def main(model_responses_file, gt_values_file, embed_model):
     model_json = load_json_file(model_responses_file)
     model_id = model_json['model_id']
+    prompt = model_json['prompt']
+    responses_start_time = model_json['start_time']
+    responses_end_time = model_json['end_time']
+    total_generation_time = get_duration(responses_start_time, responses_end_time)
+    avg_generation_time = total_generation_time.total_seconds() / len(model_json['responses'])
     clean_response_func = set_clean_responses_model(model_id)
     model_id_cleaned = model_id.replace(':', '-').replace('/', '_')
     model_responses = model_json['responses']
     gt_json = load_json_file(gt_values_file)
-    embed_model = TextEmbedding("mixedbread-ai/mxbai-embed-large-v1")
     output_file = f"response_scores_{model_id_cleaned}_{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
 
     scores = compare_responses_to_gt(model_responses, gt_json, embed_model, clean_response_func)
 
     # Generate output JSON file with results and statistics
-    generate_json_output(model_id, model_responses_file, gt_values_file, scores, output_file)
+    generate_json_output(
+        model_id,
+        prompt,
+        model_responses_file,
+        gt_values_file,
+        responses_start_time,
+        responses_end_time,
+        total_generation_time,
+        avg_generation_time,
+        scores,
+        output_file
+        )
+
 
 if __name__ == "__main__":
     args = parse_arguments()
-    main(args.model_responses_file, args.gt_values_file)
+    embed_model = TextEmbedding("mixedbread-ai/mxbai-embed-large-v1")
+    print("Embed model 'mixedbread-ai/mxbai-embed-large-v1' loaded")
+
+    progress_bar = tqdm(args.model_responses_files, desc="Initializing")
+
+    for model_responses_file in progress_bar:
+        # Set the description to show the current file being processed
+        progress_bar.set_description(f"Processing {model_responses_file}")
+        main(model_responses_file, args.gt_values_file, embed_model)
