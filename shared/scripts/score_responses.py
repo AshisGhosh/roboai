@@ -36,21 +36,6 @@ def load_json_file(filepath):
     with open(filepath, 'r') as file:
         return json.load(file)
 
-def set_clean_responses_model(model_id):
-    """
-    Returns the appropriate cleaning function based on the model_id.
-    """
-    if model_id == 'vikhyatk/moondream2':
-        return clean_responses_moondream2
-    elif model_id == 'HuggingFaceM4/idefics2-8b-chatty':
-        return clean_responses_idefics2
-    elif model_id == 'paligemma-3b-mix-448':
-        return clean_responses_paligemma
-    elif model_id == 'llava:latest':
-        return clean_responses_llava
-    else:
-        raise RuntimeError(f"Input json is incompatible or uses an unsupported model. Provided model: {model_id}")
-
 def clean_responses_minicpm(response_string):
     """
     Parse minicpm-llama3 response strings and isolate object names by removing 
@@ -117,6 +102,23 @@ def clean_responses_paligemma(response_string):
     """
     items = response_string.replace('.', '').replace(', and', ',').split(', ')
     return [item.strip() for item in items if item]
+
+def set_clean_responses_model(model_id):
+    """
+    Returns the appropriate cleaning function based on the model_id.
+    """
+    model_dict = {
+        'vikhyatk/moondream2': clean_responses_moondream2,
+        'HuggingFaceM4/idefics2-8b-chatty': clean_responses_idefics2,
+        'paligemma-3b-mix-448': clean_responses_paligemma,
+        'llava:latest': clean_responses_llava,
+        'openbmb/MiniCPM-Llama3-V-2_5-int4': clean_responses_minicpm,
+    }
+
+    if model_id in model_dict:
+        return model_dict[model_id]
+    else:
+        raise RuntimeError(f"Input json is incompatible or uses an unsupported model. Provided model: {model_id}")
 
 def compare_responses_to_gt(model_responses, gt_json, embed_model, clean_responses_func):
     """
