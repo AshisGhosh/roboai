@@ -18,7 +18,11 @@ def get_timestamp():
     return dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 def initialize_model(model_id):
-    processor = AutoProcessor.from_pretrained(model_id, size={"longest_edge": 672, "shortest_edge": 672})
+    processor = AutoProcessor.from_pretrained(
+        model_id, 
+        size={"longest_edge": 672, "shortest_edge": 672},
+        do_image_splitting=False
+        )
     quantization_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",

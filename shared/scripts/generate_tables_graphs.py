@@ -1,4 +1,4 @@
-# python ../../../scripts/generate_tables_graphs_nostylescript.py response_scores_HuggingFaceM4_idefics2-8b-chatty_20240608_031525.json
+# cd shared/data/analysis/20240606_sample-analysis && python ../../../scripts/generate_tables_graphs.py response_scores_HuggingFaceM4_idefics2-8b-chatty_20240608_031525.json response_scores_vikhyatk_moondream2_20240608_031720.json response_scores_paligemma-3b-mix-448_20240608_031912.json
 
 import argparse
 import json
@@ -101,10 +101,9 @@ def generate_detailed_model_scores(model_data):
     for filename, info in model_data['scores'].items():
         matches_unpaired = json.dumps({"Matches": info["sem_score_matches"], "Unpaired": info["unpaired_responses"]}, indent=4).replace("\n", "<br>")
         all_sem_scores = json.dumps(info["all_sem_scores"], indent=4).replace("\n", "<br>")
-
+        
         details = {
             'Image Filename': f'{filename}',
-            'Prompt': f'<code class="prompt">{model_data["prompt"]}</code>',
             'Response objects': f'<code class="response">{", ".join(info["response_names"])}</code>',
             'GT objects': f'<code class="gt">{", ".join(info["gt_names"])}</code>',
             'Final Score': f'{info["final_score"]:.3f}',
@@ -118,10 +117,13 @@ def generate_detailed_model_scores(model_data):
     
     details_df = pd.DataFrame(details_list)
     model_id = model_data['model_id']
-    html_content = f'<div id="details-{model_id}" class="model-details"><h3>Detailed Model Scores for Model {model_id}</h3>'
-    
+    html_content = f'<div id="details-{model_id}" class="model-details"<h3>Detailed Model Scores for Model {model_id}</h3>'
+    html_content += f'<h4>Prompt: <code class="prompt">{model_data["prompt"]}</code></h4>'
+    html_content += f'<details><summary>Click to view table</summary>'
     html_content += details_df.to_html(index=False, escape=False)
-    html_content += '</div>'
+    for header in ['Image Filename', 'Final Score', 'Matched Name Avg SemScore', 'Count Accuracy', 'Order Accuracy']:
+        html_content = html_content.replace(f'<th>{header}</th>', f'<th class="sortable">{header}</th>')
+    html_content += '</details></div>'
     return html_content
 
 def generate_histogram(score_data, chart_title, limits, max_frequencies, score_key):
@@ -129,13 +131,16 @@ def generate_histogram(score_data, chart_title, limits, max_frequencies, score_k
     return plot_histograms_svg(score_data, chart_title, 'Score', 'Frequency', xlim, ylim)
 
 def generate_model_overview(model_data, metrics, limits, max_frequencies):
-    html_content = f'<div class="model-aggregate-stats"><h3>Aggregate Statistics for Model {model_data["model_id"]}</h3>'
+    html_content = f'<div class="model-aggregate-stats"><h2>Aggregate Statistics for model {model_data["model_id"]}</h2>'
     aggregate_stats = model_data['aggregate_stats']
     
     for metric_name, aggregate_key, score_key, chart_title in metrics:
         stats = aggregate_stats[aggregate_key]
-        html_content += f'<div class="metric"><h4>{metric_name}</h4>'
+        html_content += f'<div class="metric"><h3>{metric_name}</h3>'
+        html_content += '<div class="content-wrapper">'
+        html_content += '<div class="table-wrapper">'
         html_content += generate_aggregate_stats_table(stats)
+        html_content += '</div>'
         
         if score_key == 'sem_score_match_stats':
             score_data = [info[score_key]['mean'] for filename, info in model_data['scores'].items()]
@@ -146,8 +151,9 @@ def generate_model_overview(model_data, metrics, limits, max_frequencies):
         
         if score_data:
             score_svg = generate_histogram(score_data, chart_title, limits, max_frequencies, score_key)
-            html_content += f'<div class="chart">{score_svg}</div>'
+            html_content += f'<div class="chart-wrapper">{score_svg}</div>'
         
+        html_content += '</div>'  # Close content-wrapper
         html_content += '</div>'  # Close metric div
     
     html_content += f'<a href="#details-{model_data["model_id"]}">Jump to Model {model_data["model_id"]} Details</a>'
@@ -162,87 +168,111 @@ def adjust_file_permissions(output_file):
 
 def set_script_tag_values():
     script ="""
-    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
     <script>
-        $(document).ready(function() {
-            var table = $('table');
-            var sortedAscending = true;
+document.addEventListener('DOMContentLoaded', function() {
+    var tables = document.querySelectorAll('.model-details table');
 
-            // Function to set sorting indicator
-            function setSortingIndicator(header, ascending) {
-                table.find('th').each(function() {
-                    $(this).find('.sort-indicator').remove();
-                });
+    tables.forEach(function(table) {
+        var sortedAscending = true;
+        var columnMapping = {
+            0: 0,  // Image Filename
+            1: 3,  // Final Score
+            2: 4,  // Matched Name Avg SemScore
+            3: 5,  // Count Accuracy
+            4: 6   // Order Accuracy
+        };
 
-                var indicator = ascending ? ' ▲' : ' ▼';
-                header.append('<span class="sort-indicator">' + indicator + '</span>');
-            }
+        function setSortingIndicator(header, ascending) {
+            var headers = table.querySelectorAll('th');
+            headers.forEach(function(th) {
+                var indicator = th.querySelector('.sort-indicator');
+                if (indicator) {
+                    th.removeChild(indicator);
+                }
+            });
 
-            function compareFilenames(a, b) {
-                const extractNumber = filename => parseInt(filename.match(/(\d+)/), 10);
-                const aNumber = extractNumber(a);
-                const bNumber = extractNumber(b);
+            var indicator = document.createElement('span');
+            indicator.className = 'sort-indicator';
+            indicator.textContent = ascending ? ' ▲' : ' ▼';
+            header.appendChild(indicator);
+        }
 
-                if (aNumber !== bNumber) {
-                    return aNumber - bNumber;
+        function compareFilenames(a, b) {
+            const extractNumber = filename => parseInt(filename.match(/(\d+)/)[0], 10);
+            return extractNumber(a) - extractNumber(b);
+        }
+
+        function parseNumber(value) {
+            return parseFloat(value.replace(/[^\d.-]/g, '')) || 0;
+        }
+
+        function sortTable(mappedColumnIndex, ascending, comparator) {
+            var columnIndex = columnMapping[mappedColumnIndex];
+            var tbody = table.querySelector('tbody');
+            var rows = Array.from(tbody.rows);
+
+            rows.sort(function(a, b) {
+                var aVal = a.cells[columnIndex].textContent.trim();
+                var bVal = b.cells[columnIndex].textContent.trim();
+
+                if (comparator) {
+                    return ascending ? comparator(aVal, bVal) : comparator(bVal, aVal);
                 }
 
-                const aFlipped = a.includes("_flipped");
-                const bFlipped = b.includes("_flipped");
+                var aValNum = parseNumber(aVal);
+                var bValNum = parseNumber(bVal);
 
-                return aFlipped - bFlipped; // True (1) will follow False (0)
-            }
+                return ascending ? aValNum - bValNum : bValNum - aValNum;
+            });
 
-            function sortTable(columnIndex, ascending, comparator) {
-                var rows = table.find('tbody tr').toArray();
-                rows.sort(function(a, b) {
-                    var aVal = $(a).children('td').eq(columnIndex).text().trim();
-                    var bVal = $(b).children('td').eq(columnIndex).text().trim();
+            var fragment = document.createDocumentFragment();
+            rows.forEach(function(row) {
+                fragment.appendChild(row);
+            });
+            tbody.innerHTML = '';  // Clear existing rows
+            tbody.appendChild(fragment);
+        }
 
-                    if (comparator) {
-                        return ascending ? comparator(aVal, bVal) : comparator(bVal, aVal);
-                    }
-
-                    var aValNum = parseFloat(aVal) || 0;
-                    var bValNum = parseFloat(bVal) || 0;
-                    return ascending ? aValNum - bValNum : bValNum - aValNum;
-                });
-
-                $.each(rows, function(index, row) {
-                    table.children('tbody').append(row);
-                });
-            }
-
-            // Adding click event to the semscore and Run headers
-            table.find('th.sortable').on('click', function() {
-                var columnIndex = $(this).index();
+        var headers = table.querySelectorAll('th.sortable');
+        headers.forEach(function(header, index) {
+            header.addEventListener('click', function() {
                 sortedAscending = !sortedAscending;
-                var comparator = columnIndex === 0 ? compareFilenames : null; // Custom comparator for filenames
-                sortTable(columnIndex, sortedAscending, comparator);
-
-                // Update the sorting indicator
-                setSortingIndicator($(this), sortedAscending);
+                var comparator = index === 0 ? compareFilenames : null;
+                sortTable(index, sortedAscending, comparator);
+                setSortingIndicator(header, sortedAscending);
             });
         });
-    </script>
+    });
+});
+    </script>   
     """
     return script
     
 def set_style_tag_values():
-    style ="""
+    style = """
         <style>
-            body { background-color: #263238; color: #ECEFF1; font-family: monospace; font-size: 1.1em; }
+            body { background-color: #263238; color: #ECEFF1; font-family: monospace; font-size: 1em; margin: 0; padding: 0; }
+            .model-id { color: #47A147 }
+            a { color: #ffffff }
             pre { white-space: pre-wrap; font-size: smaller; }
-            code { white-space: pre-wrap; background-color: black; padding: 4px; display: inline-block; }
-            code.prompt { color: #80d4ff; background-color: transparent; min-width: 40ch; }
-            code.response { color: #66ff66; width: 80ch; }
-            code.gt { color: #ffa366; width: 80ch; }
+            code { white-space: pre-wrap; background-color: black; padding: 2px; display: inline-block; }
+            code.prompt { color: #66ff66; background-color: transparent; font-size: 1em }
+            code.response { color: #ffa366; width: 80ch; }
+            code.gt { color: #80d4ff; width: 80ch; }
             details summary { cursor: pointer; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #37474F; padding: 12px; text-align: left; font-size: 0.9em; overflow: visible; position: relative; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+            th, td { border: 1px solid #37474F; padding: 4px 6px; text-align: left; font-size: 0.9em; overflow: visible; position: relative; }
             th.sortable:hover { cursor: pointer; }
+            .sort-indicator { margin-left: 5px }
+            .model-details { margin-bottom: 5px; margin-top: 5px; padding: 2px }
+            .model-aggregate-stats { margin: 10px; padding: 10px; border-radius: 8px; background-color: #37474F; box-shadow: 0 0 5px rgba(0, 0, 0, 0.1); }
+            .model-aggregate-stats .metric { margin-bottom: 10px; }
+            .model-aggregate-stats .metric h4 { margin-bottom: 5px; }
+            .model-aggregate-stats .content-wrapper { display: flex; justify-content: space-between; align-items: flex-start; }
+            .model-aggregate-stats .table-wrapper { flex: 1; margin-right: 10px; }
+            .model-aggregate-stats .chart-wrapper { flex: 1; }
         </style>
-        """
+    """
     return style
 
 def generate_html(data):
@@ -265,7 +295,9 @@ def generate_html(data):
     
     for model_data in data:
         html_content += generate_model_overview(model_data, metrics, limits, max_frequencies)
+        details_sections += '<hr>'
         details_sections += generate_detailed_model_scores(model_data)
+        details_sections += '<hr>'
 
     html_content += details_sections
     html_content += '</body></html>'
