@@ -2,6 +2,8 @@ import argparse
 import datetime as dt
 import json
 import os
+import re
+
 import numpy as np
 from tqdm import tqdm
 from scipy.stats import kendalltau
@@ -48,6 +50,36 @@ def set_clean_responses_model(model_id):
         return clean_responses_llava
     else:
         raise RuntimeError(f"Input json is incompatible or uses an unsupported model. Provided model: {model_id}")
+
+def clean_responses_minicpm(response_string):
+    """
+    Parse minicpm-llama3 response strings and isolate object names by removing 
+    variations of prefixed text up to 'are' or 'are:', then splitting on commas and semicolons, 
+    and also removing periods and the word 'and' following oxford comma.
+    """
+    # Handle different prefix cases
+    if ' are:' in response_string:
+        start_idx = response_string.find(' are:') + len(' are:')
+    elif ' are' in response_string:
+        start_idx = response_string.find(' are') + len(' are')
+    else:
+        start_idx = 0
+    
+    processed_string = response_string[start_idx:].strip()
+    
+    # Remove periods and handle "and"
+    processed_string = processed_string.replace('.', '').replace(', and', ',')
+    
+    # Use regex to handle the semicolon splitting, preserving commas within items
+    items = re.split(r';\s*(?![^"]*"\s*,)', processed_string)
+    
+    final_items = []
+    for item in items:
+        # Split on commas not within quotes
+        parts = re.split(r',\s*(?![^"]*"\s*,)', item)
+        final_items.extend(parts)
+    
+    return [item.strip() for item in final_items if item]
 
 def clean_responses_moondream2(response_string):
     """
