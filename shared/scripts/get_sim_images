@@ -1,0 +1,313 @@
+#!/usr/bin/env python3
+
+"""Run robot simulations to generate images and collect metadata.
+
+This script automates the process of running robot simulations to generate images & collect metadata
+about the objects in the simulated environment. It interacts with a server to start, run, and close
+simulations, fetch images, and retrieve object details. The script saves the images and metadata
+for each simulation run and aggregates the metadata into a single JSON file.
+
+Usage:
+    python3 robot_simulation.py [-n RUNS] [-d]
+
+Arguments:
+    -n, --runs (optional): Number of simulation runs to perform (default: 50).
+    -d, --disable_mirror (optional): Disable mirroring of images.
+
+The script creates a directory for each batch of simulation runs, named with a timestamp. Inside
+each directory, it saves images generated during the simulations and metadata about the objects
+detected in those images. The metadata includes information such as object names, poses, and
+quaternions. Also, the script records the start time and duration of the batch of simulations
+and includes this information in the aggregated metadata.
+
+The run information is saved in a JSON file named after the directory where the images are stored.
+"""
+
+
+import datetime
+import hashlib
+import json
+import os
+import httpx
+import re
+from PIL import Image
+import argparse
+import trimesh
+import numpy as np
+
+from tenacity import retry, stop_after_attempt, wait_fixed, retry_if_exception_type
+
+# Base path to the data directory containing STL files
+BASE_DATA_PATH = os.path.join(os.path.dirname(__file__), 'data')
+
+max_runs = 232
+
+# Dictionary mapping object names to STL filenames
+stl_files = {
+    "Bread": "bread.stl",
+    "Cereal": "cereal.stl",
+    "Milk": "milk.stl",
+    "Can": "can.stl"
+}
+
+# Preload meshes
+meshes = {
+    name: trimesh.load(os.path.join(BASE_DATA_PATH, filename))
+    for name, filename in stl_files.items()
+}
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="Run robot simulations to generate and optionally mirror images.")
+    parser.add_argument("-n", "--runs", type=int, default=50, help="Number of simulation runs. Max is 232 runs; will clamp to that if >232. (default: 50)")
+    parser.add_argument("-d", "--disable_mirror", action="store_true", help="Disable mirroring of images")
+    parser.add_argument("-a", "--append", type=str, help="Path to the directory for appending new simulations")
+    return parser.parse_args()
+
+def with_retry(func):
+    return retry(
+        stop=stop_after_attempt(3),
+        wait=wait_fixed(2),
+        retry=retry_if_exception_type(httpx.ReadTimeout),
+    )(func)
+
+@with_retry
+def start_simulation(sim_number):
+    print(f"[Sim {sim_number}] Starting the simulation...")
+    with httpx.Client(timeout=10) as client:
+        response = client.post("http://localhost:8000/start")
+    if response.is_success:
+        print(f"[Sim {sim_number}] Simulation started successfully.")
+        return datetime.datetime.now().timestamp()
+    else:
+        print(f"[Sim {sim_number}] Failed to start simulation.")
+    return None
+
+@with_retry
+def close_simulation(sim_number, start_time):
+    print(f"[Sim {sim_number}] Closing the simulation...")
+    with httpx.Client(timeout=10) as client:
+        response = client.post("http://localhost:8000/close")
+    if response.is_success:
+        end_time = datetime.datetime.now().timestamp()
+        print(f"[Sim {sim_number}] Simulation closed successfully.")
+        return end_time - start_time
+    else:
+        print(f"[Sim {sim_number}] Failed to close simulation.")
+    return None
+
+@with_retry
+def get_image(sim_number, image_path):
+    print(f"[Sim {sim_number}] Fetching image to save at {image_path}...")
+    with httpx.Client(timeout=10) as client:
+        response = client.get("http://localhost:8000/get_image")
+    if response.is_success:
+        with open(image_path, "wb") as f:
+            f.write(response.content)
+        print(f"[Sim {sim_number}] Image fetched and saved successfully.")
+        return True
+    print(f"[Sim {sim_number}] Failed to fetch image.")
+    return False
+
+def create_base_folder():
+    script_directory = os.path.dirname(os.path.realpath(__file__))
+    expected_directory_suffix = 'roboai/shared'  
+    if not script_directory.endswith(expected_directory_suffix):
+        raise RuntimeError(f"This script should be run from a directory ending with '{expected_directory_suffix}', but is running from '{script_directory}'.")
+    image_exports_directory = os.path.join(script_directory, 'data', 'image_exports')
+    if not os.path.exists(image_exports_directory):
+        os.makedirs(image_exports_directory)
+        print(f"Image exports directory created at {image_exports_directory}")
+    # Create a specific directory for this run based on the current timestamp
+    folder_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_directory = os.path.join(image_exports_directory, folder_name)
+    os.makedirs(run_directory, exist_ok=True)
+    print(f"Created directory for this run: {run_directory}")
+    # Update the 'latest' symlink to point to the newly created folder
+    latest_symlink_path = os.path.join(image_exports_directory, 'latest')
+    if os.path.lexists(latest_symlink_path):
+        os.unlink(latest_symlink_path)  # Remove existing symlink if it exists
+    os.symlink(folder_name, latest_symlink_path)  # Create new symlink
+    print(f"Updated 'latest' symlink to point to: {folder_name}")
+    return run_directory, folder_name
+
+def flip_images(sim_number, directory, filename):
+    print(f"[Sim {sim_number}] Flipping image {filename}...")
+    image_path = os.path.join(directory, filename)
+    img = Image.open(image_path)
+    img_flipped = img.transpose(Image.FLIP_LEFT_RIGHT)
+    flipped_filename = f"{filename.split('.')[0]}_flipped.png"
+    img_flipped.save(os.path.join(directory, flipped_filename))
+    print(f"[Sim {sim_number}] Image flipping complete.")
+
+def apply_transformation(object_name, position, quaternion, size):
+    """Apply transformation and scale to a preloaded mesh and return the transformed mesh."""
+    mesh = meshes[object_name].copy()
+    mesh.apply_scale(size)
+    transformation_matrix = trimesh.transformations.quaternion_matrix(quaternion)
+    transformation_matrix[:3, 3] = position
+    mesh.apply_transform(transformation_matrix)
+    return mesh
+
+def vertex_distance_to_plane(mesh, plane_point, plane_normal):
+    origins = np.array(mesh.vertices)
+    directions = np.repeat([plane_normal], len(origins), axis=0)
+    d = np.dot(plane_point - origins, plane_normal) / np.dot(directions, plane_normal).reshape(-1)
+    intersections = origins + directions * d[:, np.newaxis]
+    distances = np.linalg.norm(intersections - origins, axis=1)
+    return distances.min()
+
+def raytrace_distance_between_objects(origin_mesh, target_mesh):
+    origins = np.array(origin_mesh.vertices)
+    directions = target_mesh.centroid - origins
+    directions /= np.linalg.norm(directions, axis=1)[:, np.newaxis]
+    intersector = trimesh.ray.ray_triangle.RayMeshIntersector(target_mesh)
+    intersections = intersector.intersects_location(origins, directions)
+    distances = np.linalg.norm(intersections[0] - origins[intersections[1]], axis=1) if intersections[0].size > 0 else np.inf
+    return distances.min() if distances.size > 0 else np.inf
+
+def get_metadata(sim_number):
+    print(f"[Sim {sim_number}] Fetching object details and generating metadata...")
+    with httpx.Client() as client:
+        response = client.get("http://localhost:8000/get_object_details")
+    if not response.is_success:
+        print(f"[Sim {sim_number}] Failed to fetch object details or empty metadata.")
+        return None
+    objects = response.json()
+    if not objects:
+        return None
+
+    transformed_meshes = {obj['name']: apply_transformation(obj['name'], obj['pose'], obj['quaternion'], obj['size']) for obj in objects}
+
+    results = []
+    for obj in objects:
+        origin_mesh = transformed_meshes[obj['name']]
+        obj_data = {
+            "name": obj['name'],
+            "body_id": obj['body_id'],
+            "geom_id": obj['geom_id'],
+            "pose": obj['pose'],
+            "quaternion": obj['quaternion'],
+            "size": obj['size'],
+            "distances": {
+                "background_plane": vertex_distance_to_plane(origin_mesh, np.array([-1, 0, 0]), np.array([1, 0, 0])),
+                "foreground_plane": vertex_distance_to_plane(origin_mesh, np.array([1, 0, 0]), np.array([-1, 0, 0])),
+                "leftward_plane": vertex_distance_to_plane(origin_mesh, np.array([0, -1, 0]), np.array([0, 1, 0])),
+                "rightward_plane": vertex_distance_to_plane(origin_mesh, np.array([0, 1, 0]), np.array([0, -1, 0])),
+            }
+        }
+        for other_obj in objects:
+            if obj['name'] != other_obj['name']:
+                target_mesh = transformed_meshes[other_obj['name']]
+                obj_data['distances'][other_obj['name']] = raytrace_distance_between_objects(origin_mesh, target_mesh)
+        results.append(obj_data)
+    return results
+
+def format_timestamp(unix_time):
+    """Converts UNIX timestamp to a human-readable format."""
+    return datetime.datetime.fromtimestamp(unix_time).strftime("%Y-%m-%d %H:%M:%S")
+
+def generate_unique_id(batch_start_time):
+    """Generates a unique ID based on the batch start time."""
+    unique_string = f"batch_{batch_start_time}"
+    return hashlib.sha256(unique_string.encode()).hexdigest()
+
+def get_next_run_number(directory):
+    # Define a regular expression to match the numeric part of the filenames
+    pattern = re.compile(r'(\d+)\.png$')
+    
+    # Find all files matching the pattern and extract their numbers
+    existing_numbers = [
+        int(pattern.search(filename).group(1))
+        for filename in os.listdir(directory)
+        if pattern.search(filename)
+    ]
+
+    # Return the next run number, or 1 if no runs found
+    return max(existing_numbers, default=0) + 1
+
+def load_existing_metadata(directory):
+    # Use only the last part of the directory for the filename
+    folder_name = os.path.basename(directory)
+    metadata_file = os.path.join(directory, f"{folder_name}.json")
+    if os.path.exists(metadata_file):
+        with open(metadata_file, "r") as f:
+            return json.load(f)
+    return {"batch_info": [], "runs": []}  # Default to empty if not existing
+
+def save_metadata(directory, metadata):
+    # Use only the last part of the directory for the filename
+    folder_name = os.path.basename(directory)
+    metadata_file = os.path.join(directory, f"{folder_name}.json")
+    with open(metadata_file, "w") as f:
+        json.dump(metadata, f, indent=4)
+        
+def add_batch_info(metadata, uid, start_time, end_time, first_run, last_run, duration):
+    metadata["batch_info"].append({
+        "uid": uid,
+        "batch_start_time": start_time,
+        "batch_end_time": end_time,
+        "duration": duration,
+        "first_run": first_run,
+        "last_run": last_run
+    })
+
+def main():
+    args = parse_arguments()
+    num_simulations = min(args.runs, max_runs)
+    disable_mirror = args.disable_mirror
+
+    if args.append:
+        base_folder = args.append
+        metadata = load_existing_metadata(base_folder)
+    else:
+        base_folder, folder_name = create_base_folder()
+        metadata = {"batch_info": [], "runs": []}
+
+    batch_start = get_next_run_number(base_folder)
+    batch_end = batch_start + num_simulations - 1
+
+    batch_start_time = datetime.datetime.now().timestamp()
+    run_info = []
+
+    for sim_number in range(batch_start, batch_end + 1):
+        start_time = start_simulation(sim_number)
+        if start_time:
+            image_filename = f"{sim_number:04}.png"
+            image_path = os.path.join(base_folder, image_filename)
+            if get_image(sim_number, image_path):
+                if not disable_mirror:
+                    flip_images(sim_number, base_folder, image_filename)
+                metadata_entry = get_metadata(sim_number)
+                if metadata_entry:
+                    run_info.append({
+                        "run": sim_number,
+                        "image_file": image_filename,
+                        "objects": metadata_entry
+                    })
+            time_taken = close_simulation(sim_number, start_time)
+            if time_taken:
+                print(f"[Sim {sim_number}] Time taken for simulation: {time_taken:.2f} seconds")
+
+    batch_end_time = datetime.datetime.now().timestamp()
+    duration = batch_end_time - batch_start_time
+
+    add_batch_info(
+        metadata,
+        generate_unique_id(batch_start_time),
+        format_timestamp(batch_start_time),
+        format_timestamp(batch_end_time),
+        batch_start,
+        batch_end,
+        duration
+    )
+
+    metadata["runs"].extend(run_info)
+    save_metadata(base_folder, metadata)
+
+    folder_name = os.path.basename(base_folder)
+    metadata_file_name = f"{folder_name}.json"
+    print(f"Metadata saved to {os.path.join(base_folder, metadata_file_name)}")
+
+
+if __name__ == "__main__":
+    main()

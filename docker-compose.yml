@@ -106,4 +106,25 @@ services:
     extends: roboai
     command: python -u -m roboai.roboai_demo
 
+  data-gen:
+    build:
+      context: .
+      dockerfile: ./data_gen/Dockerfile
+    volumes:
+      - ./data_gen:/app
+      - /tmp/.X11-unix:/tmp/.X11-unix # Mount the X11 socket
+      - ./shared:/app/shared
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - DISPLAY=${DISPLAY} # Forward the display
+      - XAUTHORITY=${XAUTHORITY} # Use XAUTHORITY
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    # command: poetry run python -u -m data_gen.data_gen
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
     
