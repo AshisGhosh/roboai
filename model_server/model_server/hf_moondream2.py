@@ -1,12 +1,12 @@
+import torch
+from torchvision import transforms
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from PIL import Image
 import time
-
 import logging
 
 log = logging.getLogger("model-server")
 log.setLevel(logging.DEBUG)
-
 handler = logging.StreamHandler()
 handler.setLevel(logging.DEBUG)
 log.addHandler(handler)
@@ -16,6 +16,8 @@ class HuggingFaceMoonDream2:
     def __init__(self):
         self.model_id = "vikhyatk/moondream2"
         self.revision = "2024-04-02"
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        
         model_load_start = time.time()
         self.model = AutoModelForCausalLM.from_pretrained(
             self.model_id, trust_remote_code=True, revision=self.revision
@@ -41,11 +43,10 @@ class HuggingFaceMoonDream2:
         enc_image = self.encode_image(image)
         return self.answer_question(enc_image, question)
 
-
 if __name__ == "__main__":
     model = HuggingFaceMoonDream2()
     img_path = "/app/shared/data/test2.png"
-    image = Image.open(img_path)
-    enc_image = model.encode_image(image)
+    image = Image.open(img_path).convert("RGB")
+    image = transforms.ToTensor()(image).to(model.device)  # Move tensor to the same device as model
     question = "Describe this image."
     log.info(model.answer_question(enc_image, question))

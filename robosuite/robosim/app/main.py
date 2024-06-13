@@ -240,3 +240,8 @@ async def get_tasks():
 @app.get("/get_objects")
 async def get_objects():
     return robosim.get_object_names()
+
+@app.get("/get_object_details")
+async def get_object_details():
+    return robosim.get_object_details()    
+    

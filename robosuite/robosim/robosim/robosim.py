@@ -457,6 +457,28 @@ class RoboSim:
                 return_distance=True,
             )
             log.info(f"Object {obj.name}: {dist}")
+    
+    def get_object_details(self):
+        details = []
+        for obj in self.env.objects:
+            body_id = int(self.env.sim.model.body_name2id(obj.root_body))
+            geom_id = int(self.env.sim.model.body_geomadr[body_id])
+
+            # Basic visual and spatial properties
+            pose = self.env.sim.data.get_body_xpos(obj.root_body).tolist()
+            quat = self.env.sim.data.get_body_xquat(obj.root_body).tolist()
+            size = self.env.sim.model.geom_size[geom_id].tolist()
+
+            details.append({
+                "name": obj.name,
+                "body_id": body_id,
+                "geom_id": geom_id,
+                "pose": pose,
+                "quaternion": quat,
+                "size": size,
+            })
+
+        return details
 
     async def pick(self, object_name):
         self.clear_tasks()
