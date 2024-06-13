@@ -41,7 +41,8 @@ log.setLevel(logging.INFO)
 
 knowledge_base = KnowledgeBase()
 
-DEFAULT_MODEL = "openrouter/meta-llama/llama-3-8b-instruct:free"
+DEFAULT_MODEL = "openrouter/microsoft/phi-3-medium-128k-instruct:free"
+# DEFAULT_MODEL = "openrouter/meta-llama/llama-3-8b-instruct:free"
 # DEFAULT_MODEL = "openrouter/huggingfaceh4/zephyr-7b-beta:free"
 # DEFAULT_MODEL = "ollama/llama3:latest"
 # DEFAULT_MODEL = "ollama/phi3"

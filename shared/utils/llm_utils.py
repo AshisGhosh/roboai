@@ -116,3 +116,15 @@ async def get_most_important(texts: list[str] | str, k: int = 1):
 
 def get_most_important_sync(texts: list[str], k: int = 1):
     return asyncio.run(get_most_important(texts, k))
+
+def test_lite_llm():
+    text = "Hello, how are you?"
+    return complete_lite_llm(text)
+
+def complete_lite_llm(text: str, model: str = "openrouter/meta-llama/llama-3-8b-instruct:free") -> str:
+    response = litellm.completion(
+        model=model,
+        prompt=text,
+        max_tokens=100,
+    )
+    return response["data"][0]["completion"]

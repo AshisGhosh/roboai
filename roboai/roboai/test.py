@@ -43,7 +43,7 @@ def test_task():
 def test():
     messages = [{"content": "Hello, how are you?", "role": "user"}]
     response = completion(
-        model="openrouter/huggingfaceh4/zephyr-7b-beta:free", messages=messages
+    model="openrouter/microsoft/phi-3-medium-128k-instruct:free", messages=messages
     )
     print(response)
 
@@ -71,6 +71,6 @@ def test_agent():
 
 
 if __name__ == "__main__":
-    # test()
+    test()
     # test_agent()
-    test_task()
+    # test_task()
