@@ -16,10 +16,9 @@ ollama = "^0.1.8"
 gradio-client = "^0.16.1"
 replicate = "^0.25.1"
 pandas = "^2.2.2"
-fastembed = "^0.2.6"
+fastembed = "^0.2.7"
 matplotlib = "^3.5"
 gradio = "^4.29.0"
-fastembed = "^0.2.7"
 
 
 [build-system]
