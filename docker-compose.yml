@@ -82,7 +82,7 @@ services:
     volumes:
       - ~/.cache/ollama:/root/.ollama
     ports:
-      - 11434:11434    
+      - 11434:11434   
 
   roboai:
     build:
@@ -105,7 +105,7 @@ services:
   roboai-demo:
     extends: roboai
     command: python -u -m roboai.roboai_demo
-
+  
   data-gen:
     build:
       context: .
@@ -127,4 +127,27 @@ services:
         reservations:
           devices:
             - capabilities: [gpu]
+  
+  model-training:
+    build:
+      context: .
+      dockerfile: ./model_training/Dockerfile
+    volumes:
+      - ./model_training:/app
+      - /tmp/.X11-unix:/tmp/.X11-unix # Mount the X11 socket
+      - ./shared:/app/shared
+      - ~/.cache/huggingface:/root/.cache/huggingface
+    environment:
+      - DISPLAY=${DISPLAY} # Forward the display
+      - XAUTHORITY=${XAUTHORITY} # Use XAUTHORITY
+      - NVIDIA_VISIBLE_DEVICES=all
+      - NVIDIA_DRIVER_CAPABILITIES=all
+    command: poetry run python -u -m model_training.moondream2_finetuning
+    network_mode: host
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - capabilities: [gpu]
+
     
