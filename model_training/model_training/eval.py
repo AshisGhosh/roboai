@@ -1,10 +1,6 @@
 
 from .data import load_datasets
 
-model_slug="vikhyatk/moondream2"
-# MD_REVISION = "2024-04-02"
-MD_REVISION = "2024-05-08"
-
 
 
 from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -14,10 +10,8 @@ import torch
 DEVICE = "cuda"
 DTYPE = torch.float32 if DEVICE == "cpu" else torch.bfloat16 # CPU doesn't support float16. Also, switch to bfloat16 for Ampere architectures.
 
-# LORA_WEIGHTS_DIR = "saved_model"
-LORA_WEIGHTS_DIR = "ycb_saved_model"
 
-def get_model(use_4bit=False, use_lora=False) -> AutoModelForCausalLM:
+def get_model(model_id="vikhyatk/moondream2", revision ="2024-04-02", use_4bit=False, use_lora=False, lora_path=False, use_flash_attn=False) -> AutoModelForCausalLM:
     quantization_config = None
     if use_4bit:
         from transformers import BitsAndBytesConfig
@@ -32,26 +26,26 @@ def get_model(use_4bit=False, use_lora=False) -> AutoModelForCausalLM:
     if use_lora:
         from peft import PeftConfig, PeftModel
 
-        config = PeftConfig.from_pretrained(LORA_WEIGHTS_DIR)
+        config = PeftConfig.from_pretrained(lora_path)
         print(config)
 
+    flash_attn = None
+    if use_flash_attn:
+        flash_attn = "flash_attention_2" if DEVICE == "cuda" else None
 
-    tokenizer = AutoTokenizer.from_pretrained(model_slug, revision=MD_REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
     model = AutoModelForCausalLM.from_pretrained(
-        # config.base_model_name_or_path,
-        # model_path,
-        model_slug,
-        revision=MD_REVISION,
+        model_id,
+        revision=revision,
         trust_remote_code=True,
-        # attn_implementation="flash_attention_2" if DEVICE == "cuda" else None,
+        attn_implementation=flash_attn,
         torch_dtype=DTYPE,
         device_map={"": DEVICE},
-        cache_dir='',
         quantization_config=quantization_config
     )
 
     if use_lora:
-        model = PeftModel.from_pretrained(model, LORA_WEIGHTS_DIR)
+        model = PeftModel.from_pretrained(model, lora_path)
 
 
     return model, tokenizer
@@ -194,25 +188,38 @@ def eval_sample(dataset='ycb_isaac', split="test", sample_index=0):
     display_image(sample["image"])
 
 
-def moondream_eval():
+import hydra
+from omegaconf import DictConfig
+@hydra.main(config_path="conf", config_name="eval_config")
+def moondream_eval(cfg: DictConfig):
     import datetime
     import json
     import re
     import pathlib
     from shared.scripts.moondream_prompter import process_images
-    model_id = "vikhyatk/moondream2"
-    # revision = "2024-05-08"
-    # revision = "2024-04-02"
-    prompt = "Name the objects on the table from left to right."
-    # model, tokenizer = get_model()
-    model, tokenizer = get_model(use_lora=True)
+    model_id = cfg.model.id
+    revision = cfg.model.revision
+
+    if cfg.finetune.is_finetune:
+        use_lora = cfg.finetune.peft.use_lora 
+        lora_path = "/app/"+cfg.finetune.path
+
+    use_flash_attn = cfg.model.use_flash_attn
+    model, tokenizer = get_model(model_id, revision, use_lora=use_lora, lora_path=lora_path, use_flash_attn=use_flash_attn)
+
+    dataset = cfg.data.dataset
+    prompt = cfg.data.prompt
+    subset = cfg.data.subset
 
     start_time = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    path = pathlib.Path("model_training/data/ycb_isaac_raw")
+    path = pathlib.Path("/app/data/" + dataset)
     results = {}
     if path.exists():
         if path.is_dir():
             image_paths = sorted(list(path.glob("rgb_????.png")))
+            if subset:
+                subset_idx = int(len(image_paths) * subset)
+                image_paths = image_paths[:subset_idx]
             results = process_images(image_paths, model, prompt, tokenizer)
         elif path.is_file() and re.match(r"rgb_\d{4}\.png", path.name):
             results = process_images([path], model, prompt, tokenizer)
@@ -229,9 +236,12 @@ def moondream_eval():
         "end_time": end_time,
         "responses": results,
     }
-    output_name = "finetuned_moondream2_responses"
+    output_name = cfg.model.slug + "_responses"
+    if cfg.finetune.is_finetune:
+        output_name = "finetune_" + output_name
+
     output_file = (
-        f"{output_name}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        f"{output_name}_{cfg.timestamp}.json"
     )
     with open(output_file, "w") as f:
         json.dump(output_data, f, indent=4)

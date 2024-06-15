@@ -40,7 +40,6 @@ def get_model(model_id, revision=None, use_4bit=False) -> AutoModelForCausalLM:
         # attn_implementation="flash_attention_2" if DEVICE == "cuda" else None,
         torch_dtype=DTYPE,
         device_map={"": DEVICE},
-        cache_dir='',
         quantization_config=quantization_config
     )
 

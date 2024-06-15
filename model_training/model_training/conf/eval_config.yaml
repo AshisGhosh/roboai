@@ -1,0 +1,31 @@
+defaults:
+  - _self_
+
+hydra:
+  run:
+    dir: output/eval/${model.slug}/${model.slug}_${timestamp}
+
+timestamp: ${now:%Y%m%d%H%M%S}
+
+model:
+  id: vikhyatk/moondream2
+  revision: "2024-04-02"
+  slug: moondream2_${model.revision}
+  use_flash_attn: True
+
+use_wandb: False
+
+device: cuda
+
+data:
+  dataset: ycb_isaac_raw
+  prompt: Name the objects on the table from left to right.
+  subset: 0.05
+
+finetune:
+  is_finetune: True
+  path: output/train/moondream2_2024-04-02/finetune_moondream2_2024-04-02_20240615174329/final_model
+  peft:
+    use_4bit: False
+    use_lora: True
+
