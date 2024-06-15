@@ -250,6 +250,7 @@ def train(cfg: DictConfig):
     learning_rate = cfg.training.learning_rate
     use_4bit = cfg.peft.use_4bit
     use_lora = cfg.peft.use_lora
+    train_split = cfg.data.train_split
 
 
     print(f"Training model {model_id} on dataset {dataset} for {epochs} epochs.")
@@ -259,7 +260,7 @@ def train(cfg: DictConfig):
 
     print(f"Loading model {model_id} {revision}...")
     model, tokenizer = get_model(model_id, revision=revision, use_4bit=use_4bit)
-    dataloaders = get_dataloaders(datasets, model, tokenizer, batch_size, train_split=0.2)
+    dataloaders = get_dataloaders(datasets, model, tokenizer, batch_size, train_split=train_split)
 
     if use_lora:
         print("Setting up LoRA...")
