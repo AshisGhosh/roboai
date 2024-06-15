@@ -7,8 +7,10 @@ hydra:
 
 model:
   id: vikhyatk/moondream2
-  revision: "2024-04-02"
+  # revision: "2024-04-02"
+  revision: "2024-05-20"
   slug: moondream2_${model.revision}
+  use_flash_attn: True
 
 use_wandb: False
 

@@ -8,7 +8,8 @@ train:
 
 eval:
     xhost +
-    docker compose run model-training poetry run python -u -m model_training.eval --build
+    docker compose build model-training
+    docker compose run model-training poetry run python -u -m model_training.eval
     xhost -
 
 convert-dataset:
