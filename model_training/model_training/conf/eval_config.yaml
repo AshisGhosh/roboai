@@ -9,7 +9,8 @@ timestamp: ${now:%Y%m%d%H%M%S}
 
 model:
   id: vikhyatk/moondream2
-  revision: "2024-04-02"
+  # revision: "2024-04-02"
+  revision: "2024-05-20"
   slug: moondream2_${model.revision}
   use_flash_attn: True
 
@@ -20,11 +21,13 @@ device: cuda
 data:
   dataset: ycb_isaac_raw
   prompt: Name the objects on the table from left to right.
-  subset: 0.05
+  subset: False
 
 finetune:
+  # is_finetune: False
   is_finetune: True
-  path: output/train/moondream2_2024-04-02/finetune_moondream2_2024-04-02_20240615174329/final_model
+  # path: False
+  path: output/train/moondream2_2024-05-20/finetune_moondream2_2024-05-20_20240615200905/final_model
   peft:
     use_4bit: False
     use_lora: True
