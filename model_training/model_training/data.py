@@ -5,7 +5,7 @@ import os
 from PIL import Image as PILImage
 
 
-PKG = "model_training/data/"
+PKG = "/app/model_training/data/"
 
 class ChessDataset(Dataset):
     def __init__(self, split='train'):

@@ -1,0 +1,34 @@
+defaults:
+  - _self_
+
+hydra:
+  run:
+    dir: output/train/${model.slug}/finetune_${model.slug}_${now:%Y%m%d%H%M%S}
+
+model:
+  id: vikhyatk/moondream2
+  revision: "2024-04-02"
+  slug: moondream2_${model.revision}
+
+use_wandb: False
+
+device: cuda
+
+data:
+  dataset: ycb_isaac
+  train_split: 0.05
+
+peft:
+  use_4bit: False
+  use_lora: True
+  lora_alpha: 32  
+  lora_rank: 64
+  lora_dropout: 0.1
+  set_other_trainable: True
+
+training:
+  learning_rate: 1.5e-5
+  batch_size: 1
+  gradient_accumulation_steps: 1
+  epochs: 1
+

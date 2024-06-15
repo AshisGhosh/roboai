@@ -12,30 +12,15 @@ from tqdm import tqdm
 
 from .data import load_datasets
 
-model_slug="vikhyatk/moondream2"
-MD_REVISION = "2024-04-02"
-# MD_REVISION = "2024-05-08"
-
 DEVICE = "cuda"
 DTYPE = torch.float32 if DEVICE == "cpu" else torch.bfloat16 # CPU doesn't support float16. Also, switch to bfloat16 for Ampere architectures.
-use_4bit = False
-use_lora = True # must be true if using 4_bit and training.
-set_other_trainable = True # to set embed layers trainable (fully trainable, not LoRA)
 
-EPOCHS = 5
-BATCH_SIZE = 1
-GRAD_ACCUM_STEPS = 1
-
-# LR = 3e-5 # default value
-LR = 1.5e-5
-
-USE_WANDB = False
 
 ANSWER_EOS = "<|endoftext|>"
 
 IMG_TOKENS = 729    # Number of tokens used to represent each image.
 
-def get_model() -> AutoModelForCausalLM:
+def get_model(model_id, revision=None, use_4bit=False) -> AutoModelForCausalLM:
     quantization_config = None
     if use_4bit:
         from transformers import BitsAndBytesConfig
@@ -47,10 +32,10 @@ def get_model() -> AutoModelForCausalLM:
         )
         quantization_config = bnb_config
 
-    tokenizer = AutoTokenizer.from_pretrained(model_slug, revision=MD_REVISION)
+    tokenizer = AutoTokenizer.from_pretrained(model_id, revision=revision)
     model = AutoModelForCausalLM.from_pretrained(
-        model_slug,
-        revision=MD_REVISION,
+        model_id,
+        revision=revision,
         trust_remote_code=True,
         # attn_implementation="flash_attention_2" if DEVICE == "cuda" else None,
         torch_dtype=DTYPE,
@@ -62,7 +47,7 @@ def get_model() -> AutoModelForCausalLM:
     return model, tokenizer
 
 
-def get_dataloaders(datasets:dict, model:AutoModelForCausalLM, tokenizer, train_split=None) -> dict:
+def get_dataloaders(datasets:dict, model:AutoModelForCausalLM, tokenizer, batch_size, train_split=None) -> dict:
     def collate_fn(batch):
         images = [sample['image'] for sample in batch]
         images = torch.stack(model.vision_encoder.preprocess(images))
@@ -125,7 +110,7 @@ def get_dataloaders(datasets:dict, model:AutoModelForCausalLM, tokenizer, train_
     dataloaders = {
         "train": DataLoader(
             datasets["train"],
-            batch_size=BATCH_SIZE,
+            batch_size=batch_size,
             shuffle=True,
             collate_fn=collate_fn,
         ),
@@ -138,34 +123,32 @@ def get_dataloaders(datasets:dict, model:AutoModelForCausalLM, tokenizer, train_
     return dataloaders
 
 
-def setup_lora(model, use_lora=True, set_other_trainable=True):
+def setup_lora(model, lora_alpha=32, lora_rank=64, lora_dropout=0.1, set_other_trainable=True):
     # if use_4bit:
     #     from peft import prepare_model_for_kbit_training
     #     model.gradient_checkpointing_enable()
     #     model = prepare_model_for_kbit_training(model)
 
-    lora_alpha = 32
-    lora_rank = 64
+
 
     ## Apply LoRA (if use_lora is True in the config)
-    if use_lora:
-        from peft import LoraConfig
-        lora_config = LoraConfig(
-            r=lora_rank,
-            lora_alpha=lora_alpha,
-            target_modules=[
-                'proj','fc1','fc2',
-                'Wqkv','out_proj'
-            ],
-            lora_dropout=0.1,  # Example value, adjust as needed
-            bias="none",  # Example setting, adjust as needed
-            task_type="CAUSAL_LM",
-            # modules_to_save=['lm_head','embd'], #won't work with the trainer unless using a hf trainer, not custom.
-        )
+    from peft import LoraConfig
+    lora_config = LoraConfig(
+        r=lora_rank,
+        lora_alpha=lora_alpha,
+        target_modules=[
+            'proj','fc1','fc2',
+            'Wqkv','out_proj'
+        ],
+        lora_dropout=lora_dropout,  # Example value, adjust as needed
+        bias="none",  # Example setting, adjust as needed
+        task_type="CAUSAL_LM",
+        # modules_to_save=['lm_head','embd'], #won't work with the trainer unless using a hf trainer, not custom.
+    )
 
-        from peft import get_peft_model
-        model = get_peft_model(model, lora_config)
-        model.print_trainable_parameters()
+    from peft import get_peft_model
+    model = get_peft_model(model, lora_config)
+    model.print_trainable_parameters()
 
     if set_other_trainable:
         trainable_params_names = ['lm_head','embd']
@@ -184,7 +167,7 @@ def setup_lora(model, use_lora=True, set_other_trainable=True):
         # Convert trainable_params to state_dict format
         trainable_params_state_dict = {n: p.data for n, p in trainable_params.items()}
     
-    return model, trainable_params_state_dict, lora_alpha, lora_rank
+    return model, trainable_params_state_dict
 
 
 
@@ -213,31 +196,31 @@ def compute_loss(model, batch):
     return outputs.loss
 
 
-def lr_schedule(step, max_steps, schedule_type="cosine"):
+def lr_schedule(learning_rate, step, max_steps, schedule_type="cosine"):
     if schedule_type == "cosine":
         x = step / max_steps
         if x < 0.1:
-            return 0.1 * LR + 0.9 * LR * x / 0.1
+            return 0.1 * learning_rate + 0.9 * learning_rate * x / 0.1
         else:
-            return 0.1 * LR + 0.9 * LR * (1 + math.cos(math.pi * (x - 0.1))) / 2
+            return 0.1 * learning_rate + 0.9 * learning_rate * (1 + math.cos(math.pi * (x - 0.1))) / 2
     elif schedule_type == "constant":
         x = step / max_steps
         if x < 0.1:
-            return 0.1 * LR + 0.9 * LR * x / 0.1
+            return 0.1 * learning_rate + 0.9 * learning_rate * x / 0.1
         else:
-            return LR
+            return learning_rate
     else:
         raise NotImplementedError
 
 
 
-def get_optimizer(model, lora_params, param_selection="lora"):
+def get_optimizer(model, learning_rate, lora_params=None, param_selection="lora"):
     if param_selection == "lora":
         return Adam8bit(
             [
                 {"params": lora_params},
             ],
-            lr=LR * 0.1,
+            lr=learning_rate * 0.1,
             betas=(0.9, 0.95),
             eps=1e-6
         )
@@ -246,21 +229,44 @@ def get_optimizer(model, lora_params, param_selection="lora"):
             [
                 {"params": model.text_model.parameters()},
             ],
-            lr=LR * 0.1,
+            lr=learning_rate * 0.1,
             betas=(0.9, 0.95),
             eps=1e-6
         )
     else:
         raise NotImplementedError
 
-def train():
-    # datasets = load_datasets("chess")
-    datasets = load_datasets("ycb_isaac")
-    model, tokenizer = get_model()
-    dataloaders = get_dataloaders(datasets, model, tokenizer, train_split=0.2)
+import hydra
+from omegaconf import DictConfig
+
+@hydra.main(config_path="conf", config_name="config")
+def train(cfg: DictConfig):
+    model_id = cfg.model.id
+    revision = cfg.model.revision
+    dataset = cfg.data.dataset
+    epochs = cfg.training.epochs
+    batch_size = cfg.training.batch_size
+    gradient_accumulation_steps = cfg.training.gradient_accumulation_steps
+    learning_rate = cfg.training.learning_rate
+    use_4bit = cfg.peft.use_4bit
+    use_lora = cfg.peft.use_lora
+
+
+    print(f"Training model {model_id} on dataset {dataset} for {epochs} epochs.")
+
+    print(f"Loading datasets {dataset}...")
+    datasets = load_datasets(dataset)
+
+    print(f"Loading model {model_id} {revision}...")
+    model, tokenizer = get_model(model_id, revision=revision, use_4bit=use_4bit)
+    dataloaders = get_dataloaders(datasets, model, tokenizer, batch_size, train_split=0.2)
 
     if use_lora:
-        model, trainable_params_state_dict, lora_alpha, lora_rank = setup_lora(model)
+        print("Setting up LoRA...")
+        lora_alpha = cfg.peft.lora_alpha
+        lora_rank = cfg.peft.lora_rank
+        lora_dropout = cfg.peft.lora_dropout
+        model, trainable_params_state_dict = setup_lora(model, lora_alpha=lora_alpha, lora_rank=lora_rank, lora_dropout=lora_dropout)
         LR_scaling = lora_alpha / (lora_rank**0.5)
         print("Using an LR scaling for LoRA adapters of: ", LR_scaling)
 
@@ -270,9 +276,10 @@ def train():
         if "lora" in name:
             lora_params.extend([p for p in module.parameters() if p.requires_grad])
 
-    optimizer = get_optimizer(model, lora_params, param_selection="lora")
+    print("Training model...")
+    optimizer = get_optimizer(model, learning_rate, lora_params, param_selection="lora")
 
-    total_steps = EPOCHS * len(dataloaders["train"]) // GRAD_ACCUM_STEPS
+    total_steps = epochs * len(dataloaders["train"]) // gradient_accumulation_steps
 
     # Eval steps
     eval_freq = 0.25 # means run every such fraction of total steps.
@@ -282,38 +289,38 @@ def train():
     model.text_model.transformer.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False},) #this fixes the no grad issues...
 
 
-    if USE_WANDB:
+    if cfg.use_wandb:
         import wandb
         wandb.init(
             project="model-ft",
             config={
-                "EPOCHS": EPOCHS,
-                "BATCH_SIZE": BATCH_SIZE,
-                "GRAD_ACCUM_STEPS": GRAD_ACCUM_STEPS,
-                "LR": LR,
+                "EPOCHS": epochs,
+                "BATCH_SIZE": batch_size,
+                "GRAD_ACCUM_STEPS": gradient_accumulation_steps,
+                "LR": learning_rate,
             }
         )
 
     i = 0
-    for epoch in range(EPOCHS):
-        for batch in tqdm(dataloaders["train"], desc=f"Epoch {epoch + 1}/{EPOCHS}"):
+    for epoch in range(epochs):
+        for batch in tqdm(dataloaders["train"], desc=f"Epoch {epoch + 1}/{epochs}"):
             i += 1
 
             loss = compute_loss(model, batch)
             loss.backward()
 
-            if i % GRAD_ACCUM_STEPS == 0:
+            if i % gradient_accumulation_steps == 0:
                 optimizer.step()
                 optimizer.zero_grad()
 
-            lr = lr_schedule(i / GRAD_ACCUM_STEPS, total_steps)
+            lr = lr_schedule(learning_rate, i / gradient_accumulation_steps, total_steps)
             for param_group in optimizer.param_groups:
                 if param_group['params'] == lora_params:
                     param_group['lr'] = lr * LR_scaling  # Apply scaling only to lora_params
                 else:
                     param_group['lr'] = lr  # Apply base lr to all other params
 
-            if i % eval_steps == 0 and USE_WANDB:
+            if i % eval_steps == 0 and cfg.use_wandb:
                 # Calculate validation loss
                 val_loss = 0
                 for val_batch in tqdm(dataloaders["test"], desc="Validation"):
@@ -321,21 +328,21 @@ def train():
                         val_loss += compute_loss(model, val_batch).item()
                 val_loss /= len(dataloaders["test"])
 
-            if USE_WANDB:
+            if cfg.use_wandb:
                 wandb.log({
                     "loss/train": loss.item(),
                     "lr": optimizer.param_groups[0]['lr']
                 } | ({"loss/val": val_loss} if i % eval_steps == 0 else {}))
 
     # Save the final model
-    save_directory = "ycb_saved_model"
+    save_directory = "final_model"
     if not os.path.exists(save_directory):
         os.makedirs(save_directory)
     model.save_pretrained(save_directory)
     tokenizer.save_pretrained(save_directory)
 
 
-    if USE_WANDB:
+    if cfg.use_wandb:
         wandb.finish()
 
     print("Training complete.")
