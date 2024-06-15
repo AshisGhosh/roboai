@@ -4,16 +4,19 @@ from torch.utils.data import DataLoader
 
 
 DEVICE = "cuda"
-DTYPE = torch.float32 if DEVICE == "cpu" else torch.bfloat16 # CPU doesn't support float16. Also, switch to bfloat16 for Ampere architectures.
+DTYPE = (
+    torch.float32 if DEVICE == "cpu" else torch.bfloat16
+)  # CPU doesn't support float16. Also, switch to bfloat16 for Ampere architectures.
 
 ANSWER_EOS = "<|endoftext|>"
-IMG_TOKENS = 729    # Number of tokens used to represent each image.
+IMG_TOKENS = 729  # Number of tokens used to represent each image.
 
 
-
-def get_dataloaders(datasets:dict, model:AutoModelForCausalLM, tokenizer, batch_size, train_split=None) -> dict:
+def get_dataloaders(
+    datasets: dict, model: AutoModelForCausalLM, tokenizer, batch_size, train_split=None
+) -> dict:
     def collate_fn(batch):
-        images = [sample['image'] for sample in batch]
+        images = [sample["image"] for sample in batch]
         images = [model.vision_encoder.preprocess(image) for image in images]
 
         labels_acc = []
@@ -23,17 +26,16 @@ def get_dataloaders(datasets:dict, model:AutoModelForCausalLM, tokenizer, batch_
             toks = [tokenizer.bos_token_id]
             labs = [-100] * (IMG_TOKENS + 1)
 
-            for qa in sample['qa']:
+            for qa in sample["qa"]:
                 q_t = tokenizer(
                     f"\n\nQuestion: {qa['question']}\n\nAnswer:",
-                    add_special_tokens=False
+                    add_special_tokens=False,
                 ).input_ids
                 toks.extend(q_t)
                 labs.extend([-100] * len(q_t))
 
                 a_t = tokenizer(
-                    f" {qa['answer']}{ANSWER_EOS}",
-                    add_special_tokens=False
+                    f" {qa['answer']}{ANSWER_EOS}", add_special_tokens=False
                 ).input_ids
                 toks.extend(a_t)
                 labs.extend(a_t)
@@ -58,14 +60,20 @@ def get_dataloaders(datasets:dict, model:AutoModelForCausalLM, tokenizer, batch_
         return (
             images,
             torch.stack([torch.tensor(t, dtype=torch.long) for t in tokens_acc]),
-            torch.stack([torch.tensor(l, dtype=torch.long) for l in labels_acc]),
+            torch.stack(
+                [torch.tensor(label, dtype=torch.long) for label in labels_acc]
+            ),
             torch.stack([torch.tensor(a, dtype=torch.bool) for a in attn_mask_acc]),
         )
 
     if train_split is not None:
         from torch.utils.data import random_split
+
         train_split_idx = int(len(datasets["train"]) * train_split)
-        train_subset, _ = random_split(datasets["train"], [train_split_idx, len(datasets["train"]) - train_split_idx])
+        train_subset, _ = random_split(
+            datasets["train"],
+            [train_split_idx, len(datasets["train"]) - train_split_idx],
+        )
         datasets["train"] = train_subset
 
     dataloaders = {
@@ -83,6 +91,7 @@ def get_dataloaders(datasets:dict, model:AutoModelForCausalLM, tokenizer, batch_
     }
     return dataloaders
 
+
 def compute_loss(model, batch):
     images, tokens, labels, attn_mask = batch
 
@@ -94,7 +103,9 @@ def compute_loss(model, batch):
         img_embs = model.vision_encoder(images)
 
     tok_embs = model.text_model.get_input_embeddings()(tokens)
-    inputs_embeds = torch.cat((tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1)
+    inputs_embeds = torch.cat(
+        (tok_embs[:, 0:1, :], img_embs, tok_embs[:, 1:, :]), dim=1
+    )
 
     outputs = model.text_model(
         inputs_embeds=inputs_embeds,

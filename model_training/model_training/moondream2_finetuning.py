@@ -1,28 +1,36 @@
-import os
-os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
-
 import torch
 from transformers import AutoTokenizer, AutoModelForCausalLM
-
 from bitsandbytes.optim import Adam8bit
 import math
-from einops import rearrange
 from tqdm import tqdm
 
 from .data import load_datasets
 
-DEVICE = "cuda"
-DTYPE = torch.float32 if DEVICE == "cpu" else torch.bfloat16 # CPU doesn't support float16. Also, switch to bfloat16 for Ampere architectures.
+import hydra
+from omegaconf import DictConfig
 
-def get_model(model_id, revision=None, use_4bit=False, use_flash_attn=False) -> AutoModelForCausalLM:
+import os
+
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+
+DEVICE = "cuda"
+DTYPE = (
+    torch.float32 if DEVICE == "cpu" else torch.bfloat16
+)  # CPU doesn't support float16. Also, switch to bfloat16 for Ampere architectures.
+
+
+def get_model(
+    model_id, revision=None, use_4bit=False, use_flash_attn=False
+) -> AutoModelForCausalLM:
     quantization_config = None
     if use_4bit:
         from transformers import BitsAndBytesConfig
+
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=DTYPE
+            bnb_4bit_compute_dtype=DTYPE,
         )
         quantization_config = bnb_config
 
@@ -39,29 +47,27 @@ def get_model(model_id, revision=None, use_4bit=False, use_flash_attn=False) -> 
         attn_implementation=flash_attn,
         torch_dtype=DTYPE,
         device_map={"": DEVICE},
-        quantization_config=quantization_config
+        quantization_config=quantization_config,
     )
 
     return model, tokenizer
 
 
-def setup_lora(model, lora_alpha=32, lora_rank=64, lora_dropout=0.1, set_other_trainable=True):
+def setup_lora(
+    model, lora_alpha=32, lora_rank=64, lora_dropout=0.1, set_other_trainable=True
+):
     # if use_4bit:
     #     from peft import prepare_model_for_kbit_training
     #     model.gradient_checkpointing_enable()
     #     model = prepare_model_for_kbit_training(model)
 
-
-
     ## Apply LoRA (if use_lora is True in the config)
     from peft import LoraConfig
+
     lora_config = LoraConfig(
         r=lora_rank,
         lora_alpha=lora_alpha,
-        target_modules=[
-            'proj','fc1','fc2',
-            'Wqkv','out_proj'
-        ],
+        target_modules=["proj", "fc1", "fc2", "Wqkv", "out_proj"],
         lora_dropout=lora_dropout,  # Example value, adjust as needed
         bias="none",  # Example setting, adjust as needed
         task_type="CAUSAL_LM",
@@ -69,11 +75,12 @@ def setup_lora(model, lora_alpha=32, lora_rank=64, lora_dropout=0.1, set_other_t
     )
 
     from peft import get_peft_model
+
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
 
     if set_other_trainable:
-        trainable_params_names = ['lm_head','embd']
+        trainable_params_names = ["lm_head", "embd"]
         # trainable_params_names = None
 
         # Set modules to be trainable
@@ -84,13 +91,14 @@ def setup_lora(model, lora_alpha=32, lora_rank=64, lora_dropout=0.1, set_other_t
             #     p.requires_grad_(False)  # Optional: Set the rest to be not trainable
 
         # Make a dictionary of trainable parameters
-        trainable_params = {n: p for n, p in model.named_parameters() if p.requires_grad}
+        trainable_params = {
+            n: p for n, p in model.named_parameters() if p.requires_grad
+        }
 
         # Convert trainable_params to state_dict format
         trainable_params_state_dict = {n: p.data for n, p in trainable_params.items()}
-    
-    return model, trainable_params_state_dict
 
+    return model, trainable_params_state_dict
 
 
 def lr_schedule(learning_rate, step, max_steps, schedule_type="cosine"):
@@ -99,7 +107,10 @@ def lr_schedule(learning_rate, step, max_steps, schedule_type="cosine"):
         if x < 0.1:
             return 0.1 * learning_rate + 0.9 * learning_rate * x / 0.1
         else:
-            return 0.1 * learning_rate + 0.9 * learning_rate * (1 + math.cos(math.pi * (x - 0.1))) / 2
+            return (
+                0.1 * learning_rate
+                + 0.9 * learning_rate * (1 + math.cos(math.pi * (x - 0.1))) / 2
+            )
     elif schedule_type == "constant":
         x = step / max_steps
         if x < 0.1:
@@ -110,7 +121,6 @@ def lr_schedule(learning_rate, step, max_steps, schedule_type="cosine"):
         raise NotImplementedError
 
 
-
 def get_optimizer(model, learning_rate, lora_params=None, param_selection="lora"):
     if param_selection == "lora":
         return Adam8bit(
@@ -119,7 +129,7 @@ def get_optimizer(model, learning_rate, lora_params=None, param_selection="lora"
             ],
             lr=learning_rate * 0.1,
             betas=(0.9, 0.95),
-            eps=1e-6
+            eps=1e-6,
         )
     elif param_selection == "all":
         return Adam8bit(
@@ -128,12 +138,13 @@ def get_optimizer(model, learning_rate, lora_params=None, param_selection="lora"
             ],
             lr=learning_rate * 0.1,
             betas=(0.9, 0.95),
-            eps=1e-6
+            eps=1e-6,
         )
     else:
         raise NotImplementedError
-    
-def get_model_dataloaders(model_slug:str):
+
+
+def get_model_dataloaders(model_slug: str):
     import importlib
 
     # Assume cfg.model.slug is set to the appropriate string
@@ -142,10 +153,10 @@ def get_model_dataloaders(model_slug:str):
     # Import the module dynamically
     try:
         module = importlib.import_module(module_name)
-        
+
         # Access the get_dataloaders function from the imported module
         get_dataloaders = getattr(module, "get_dataloaders")
-        
+
         return get_dataloaders
     except ImportError:
         print(f"Module {module_name} could not be imported.")
@@ -154,7 +165,8 @@ def get_model_dataloaders(model_slug:str):
         print(f"Function get_dataloaders not found in module {module_name}.")
         raise AttributeError
 
-def get_model_compute_loss(model_slug:str):
+
+def get_model_compute_loss(model_slug: str):
     import importlib
 
     # Assume cfg.model.slug is set to the appropriate string
@@ -163,10 +175,10 @@ def get_model_compute_loss(model_slug:str):
     # Import the module dynamically
     try:
         module = importlib.import_module(module_name)
-        
+
         # Access the get_dataloaders function from the imported module
         compute_loss = getattr(module, "compute_loss")
-        
+
         return compute_loss
     except ImportError:
         print(f"Module {module_name} could not be imported.")
@@ -176,8 +188,6 @@ def get_model_compute_loss(model_slug:str):
         raise AttributeError
 
 
-import hydra
-from omegaconf import DictConfig
 @hydra.main(config_path="conf", config_name="config")
 def train(cfg: DictConfig):
     model_id = cfg.model.id
@@ -191,7 +201,6 @@ def train(cfg: DictConfig):
     use_lora = cfg.peft.use_lora
     train_split = cfg.data.train_split
 
-
     print(f"Training model {model_id} on dataset {dataset} for {epochs} epochs.")
 
     print(f"Loading datasets {dataset}...")
@@ -199,16 +208,22 @@ def train(cfg: DictConfig):
 
     print(f"Loading model {model_id} {revision}...")
     use_flash_attn = cfg.model.use_flash_attn
-    model, tokenizer = get_model(model_id, revision=revision, use_4bit=use_4bit, use_flash_attn=use_flash_attn)
+    model, tokenizer = get_model(
+        model_id, revision=revision, use_4bit=use_4bit, use_flash_attn=use_flash_attn
+    )
     get_dataloaders = get_model_dataloaders(cfg.model.slug)
-    dataloaders = get_dataloaders(datasets, model, tokenizer, batch_size, train_split=train_split)
+    dataloaders = get_dataloaders(
+        datasets, model, tokenizer, batch_size, train_split=train_split
+    )
 
     if use_lora:
         print("Setting up LoRA...")
         lora_alpha = cfg.peft.lora_alpha
         lora_rank = cfg.peft.lora_rank
         lora_dropout = cfg.peft.lora_dropout
-        model, trainable_params_state_dict = setup_lora(model, lora_alpha=lora_alpha, lora_rank=lora_rank, lora_dropout=lora_dropout)
+        model, trainable_params_state_dict = setup_lora(
+            model, lora_alpha=lora_alpha, lora_rank=lora_rank, lora_dropout=lora_dropout
+        )
         LR_scaling = lora_alpha / (lora_rank**0.5)
         print("Using an LR scaling for LoRA adapters of: ", LR_scaling)
 
@@ -224,16 +239,19 @@ def train(cfg: DictConfig):
     total_steps = epochs * len(dataloaders["train"]) // gradient_accumulation_steps
 
     # Eval steps
-    eval_freq = 0.25 # means run every such fraction of total steps.
-    eval_steps=total_steps*eval_freq
+    eval_freq = 0.25  # means run every such fraction of total steps.
+    eval_steps = total_steps * eval_freq
 
     model.text_model.train()
-    model.text_model.transformer.gradient_checkpointing_enable(gradient_checkpointing_kwargs={"use_reentrant":False},) #this fixes the no grad issues...
+    model.text_model.transformer.gradient_checkpointing_enable(
+        gradient_checkpointing_kwargs={"use_reentrant": False},
+    )  # this fixes the no grad issues...
 
     compute_loss = get_model_compute_loss(cfg.model.slug)
 
     if cfg.use_wandb:
         import wandb
+
         wandb.init(
             project="model-ft",
             config={
@@ -241,7 +259,7 @@ def train(cfg: DictConfig):
                 "BATCH_SIZE": batch_size,
                 "GRAD_ACCUM_STEPS": gradient_accumulation_steps,
                 "LR": learning_rate,
-            }
+            },
         )
 
     i = 0
@@ -256,12 +274,16 @@ def train(cfg: DictConfig):
                 optimizer.step()
                 optimizer.zero_grad()
 
-            lr = lr_schedule(learning_rate, i / gradient_accumulation_steps, total_steps)
+            lr = lr_schedule(
+                learning_rate, i / gradient_accumulation_steps, total_steps
+            )
             for param_group in optimizer.param_groups:
-                if param_group['params'] == lora_params:
-                    param_group['lr'] = lr * LR_scaling  # Apply scaling only to lora_params
+                if param_group["params"] == lora_params:
+                    param_group["lr"] = (
+                        lr * LR_scaling
+                    )  # Apply scaling only to lora_params
                 else:
-                    param_group['lr'] = lr  # Apply base lr to all other params
+                    param_group["lr"] = lr  # Apply base lr to all other params
 
             if i % eval_steps == 0 and cfg.use_wandb:
                 # Calculate validation loss
@@ -272,10 +294,10 @@ def train(cfg: DictConfig):
                 val_loss /= len(dataloaders["test"])
 
             if cfg.use_wandb:
-                wandb.log({
-                    "loss/train": loss.item(),
-                    "lr": optimizer.param_groups[0]['lr']
-                } | ({"loss/val": val_loss} if i % eval_steps == 0 else {}))
+                wandb.log(
+                    {"loss/train": loss.item(), "lr": optimizer.param_groups[0]["lr"]}
+                    | ({"loss/val": val_loss} if i % eval_steps == 0 else {})
+                )
 
     # Save the final model
     save_directory = "final_model"
@@ -283,7 +305,6 @@ def train(cfg: DictConfig):
         os.makedirs(save_directory)
     model.save_pretrained(save_directory)
     tokenizer.save_pretrained(save_directory)
-
 
     if cfg.use_wandb:
         wandb.finish()
@@ -293,6 +314,7 @@ def train(cfg: DictConfig):
 
 def main():
     train()
+
 
 if __name__ == "__main__":
     main()

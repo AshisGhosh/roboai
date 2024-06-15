@@ -1,25 +1,34 @@
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
 
 from .data import load_datasets
 
+import hydra
+from omegaconf import DictConfig
 
-
-from transformers import AutoModelForCausalLM, AutoTokenizer
-model_path = "models--vikhyatk--moondream2/snapshots/9ba2958f5a886de83fa18a235d651295a05b4d13"
-
-import torch
 DEVICE = "cuda"
-DTYPE = torch.float32 if DEVICE == "cpu" else torch.bfloat16 # CPU doesn't support float16. Also, switch to bfloat16 for Ampere architectures.
+DTYPE = (
+    torch.float32 if DEVICE == "cpu" else torch.bfloat16
+)  # CPU doesn't support float16. Also, switch to bfloat16 for Ampere architectures.
 
 
-def get_model(model_id="vikhyatk/moondream2", revision ="2024-04-02", use_4bit=False, use_lora=False, lora_path=False, use_flash_attn=False) -> AutoModelForCausalLM:
+def get_model(
+    model_id="vikhyatk/moondream2",
+    revision="2024-04-02",
+    use_4bit=False,
+    use_lora=False,
+    lora_path=False,
+    use_flash_attn=False,
+) -> AutoModelForCausalLM:
     quantization_config = None
     if use_4bit:
         from transformers import BitsAndBytesConfig
+
         bnb_config = BitsAndBytesConfig(
             load_in_4bit=True,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=DTYPE
+            bnb_4bit_compute_dtype=DTYPE,
         )
         quantization_config = bnb_config
 
@@ -41,15 +50,13 @@ def get_model(model_id="vikhyatk/moondream2", revision ="2024-04-02", use_4bit=F
         attn_implementation=flash_attn,
         torch_dtype=DTYPE,
         device_map={"": DEVICE},
-        quantization_config=quantization_config
+        quantization_config=quantization_config,
     )
 
     if use_lora:
         model = PeftModel.from_pretrained(model, lora_path)
 
-
     return model, tokenizer
-
 
 
 def compare_models():
@@ -81,13 +88,15 @@ def compare_models():
 
         print("No differences found in the model parameters.")
         return True
-    
+
     def compare_model_weights_by_values(model1, model2):
         model1_weights = list(model1.parameters())
         model2_weights = list(model2.parameters())
 
         if len(model1_weights) != len(model2_weights):
-            print(f"The number of parameters is different: {len(model1_weights)} vs {len(model2_weights)}")
+            print(
+                f"The number of parameters is different: {len(model1_weights)} vs {len(model2_weights)}"
+            )
             return False
 
         for i, (param1, param2) in enumerate(zip(model1_weights, model2_weights)):
@@ -97,7 +106,7 @@ def compare_models():
 
         print("No differences found in the model parameters.")
         return True
-    
+
     def compare_common_weights(model1, model2):
         model1_dict = model1.state_dict()
         model2_dict = model2.state_dict()
@@ -115,61 +124,69 @@ def compare_models():
 
         print("No differences found in the common parameters.")
         return True
-    
+
     weights_are_same = compare_model_weights(model1, model2)
     # weights_are_same = compare_model_weights_by_values(model1, model2)
     # weights_are_same = compare_common_weights(model1, model2)
 
-
     if not weights_are_same:
-        print("The models have different weights, indicating training has modified the weights.")
+        print(
+            "The models have different weights, indicating training has modified the weights."
+        )
     else:
-        print("The models have identical weights, indicating training may not have modified the weights.")
+        print(
+            "The models have identical weights, indicating training may not have modified the weights."
+        )
 
     def check_lora_weights(model):
-        lora_params = {name: param for name, param in model.named_parameters() if "lora" in name}
+        lora_params = {
+            name: param for name, param in model.named_parameters() if "lora" in name
+        }
         if not lora_params:
             print("No LoRA parameters found.")
             return False
-        
+
         for name, param in lora_params.items():
             if torch.sum(param.data != 0) > 0:
                 print(f"LoRA parameter {name} has non-zero values.")
             else:
                 print(f"LoRA parameter {name} is all zeros.")
         return True
-    
+
     check_lora_weights(model2)
 
 
 def display_image(image):
     import cv2
     import numpy as np
+
     img = np.array(image)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    cv2.namedWindow('image', cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('image', 600, 600)
-    cv2.imshow('image', img)
+    cv2.namedWindow("image", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("image", 600, 600)
+    cv2.imshow("image", img)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
+
 def test_dataset():
     from .data import load_datasets
+
     datasets = load_datasets("ycb_isaac")
-    sample = datasets['train'][0]
-    for qa in sample['qa']:
-        print('Question:', qa['question'])
-        print('Ground Truth:', qa['answer'])
+    sample = datasets["train"][0]
+    for qa in sample["qa"]:
+        print("Question:", qa["question"])
+        print("Ground Truth:", qa["answer"])
     display_image(sample["image"])
 
-    sample = datasets['test'][1]
-    for qa in sample['qa']:
-        print('Question:', qa['question'])
-        print('Ground Truth:', qa['answer'])
+    sample = datasets["test"][1]
+    for qa in sample["qa"]:
+        print("Question:", qa["question"])
+        print("Ground Truth:", qa["answer"])
     display_image(sample["image"])
 
 
-def eval_sample(dataset='ycb_isaac', split="test", sample_index=0):
+def eval_sample(dataset="ycb_isaac", split="test", sample_index=0):
     datasets = load_datasets(dataset)
     sample = datasets[split][sample_index]
 
@@ -177,19 +194,20 @@ def eval_sample(dataset='ycb_isaac', split="test", sample_index=0):
     # model, tokenizer = get_model()
     model.eval()
 
-    for qa in sample['qa']:
-        print('Question:', qa['question'])
-        print('Ground Truth:', qa['answer'])
-        print('model:', model.answer_question(
-            model.encode_image(sample['image']),
-            qa['question'],
-            tokenizer=tokenizer,
-        ))
+    for qa in sample["qa"]:
+        print("Question:", qa["question"])
+        print("Ground Truth:", qa["answer"])
+        print(
+            "model:",
+            model.answer_question(
+                model.encode_image(sample["image"]),
+                qa["question"],
+                tokenizer=tokenizer,
+            ),
+        )
     display_image(sample["image"])
 
 
-import hydra
-from omegaconf import DictConfig
 @hydra.main(config_path="conf", config_name="eval_config")
 def moondream_eval(cfg: DictConfig):
     import datetime
@@ -197,15 +215,22 @@ def moondream_eval(cfg: DictConfig):
     import re
     import pathlib
     from shared.scripts.moondream_prompter import process_images
+
     model_id = cfg.model.id
     revision = cfg.model.revision
 
     if cfg.finetune.is_finetune:
-        use_lora = cfg.finetune.peft.use_lora 
-        lora_path = "/app/"+cfg.finetune.path
+        use_lora = cfg.finetune.peft.use_lora
+        lora_path = "/app/" + cfg.finetune.path
 
     use_flash_attn = cfg.model.use_flash_attn
-    model, tokenizer = get_model(model_id, revision, use_lora=use_lora, lora_path=lora_path, use_flash_attn=use_flash_attn)
+    model, tokenizer = get_model(
+        model_id,
+        revision,
+        use_lora=use_lora,
+        lora_path=lora_path,
+        use_flash_attn=use_flash_attn,
+    )
 
     dataset = cfg.data.dataset
     prompt = cfg.data.prompt
@@ -240,12 +265,11 @@ def moondream_eval(cfg: DictConfig):
     if cfg.finetune.is_finetune:
         output_name = "finetune_" + output_name
 
-    output_file = (
-        f"{output_name}_{cfg.timestamp}.json"
-    )
+    output_file = f"{output_name}_{cfg.timestamp}.json"
     with open(output_file, "w") as f:
         json.dump(output_data, f, indent=4)
     print(f"Output written to {output_file}")
+
 
 def main():
     # compare_models()
@@ -256,4 +280,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    
