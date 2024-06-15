@@ -219,6 +219,8 @@ def moondream_eval(cfg: DictConfig):
     model_id = cfg.model.id
     revision = cfg.model.revision
 
+    use_lora = False
+    lora_path = None
     if cfg.finetune.is_finetune:
         use_lora = cfg.finetune.peft.use_lora
         lora_path = "/app/" + cfg.finetune.path
