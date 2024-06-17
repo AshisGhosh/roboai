@@ -4,7 +4,8 @@ import datetime as dt
 import omni.replicator.core as rep
 
 with rep.new_layer():
-    rep.settings.carb_settings("/omni/replicator/RTSubframes", 8)
+    rep.settings.carb_settings("/omni/replicator/RTSubframes", 12)
+    rep.settings.set_stage_up_axis("Y")
 
     distance_light = rep.create.light(
         rotation=(315, 0, 0), intensity=3000, light_type="distant"
@@ -48,7 +49,7 @@ with rep.new_layer():
         with rep.utils.sequential():
             with cracker_box:
                 rep.modify.pose(
-                    rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180))
+                    rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180), seed=1)
                 )
                 rep.randomizer.scatter_2d(
                     cracker_plane_samp,
@@ -58,7 +59,7 @@ with rep.new_layer():
                 )
             with sugar_box:
                 rep.modify.pose(
-                    rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180))
+                    rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180), seed=2)
                 )
                 rep.randomizer.scatter_2d(
                     sugar_plane_samp,
@@ -70,7 +71,7 @@ with rep.new_layer():
                 )
             with soup_can:
                 rep.modify.pose(
-                    rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180))
+                    rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180), seed=3)
                 )
                 rep.randomizer.scatter_2d(
                     soup_plane_samp,
@@ -83,7 +84,7 @@ with rep.new_layer():
                 )
             with mustard_bottle:
                 rep.modify.pose(
-                    rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180))
+                    rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180), seed=4)
                 )
                 rep.randomizer.scatter_2d(
                     mustard_plane_samp,
@@ -110,14 +111,14 @@ with rep.new_layer():
 
     writer = rep.WriterRegistry.get("BasicWriter")
     writer.initialize(
-        output_dir=f"replicator_test_output/{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}",
+        output_dir=f"/isaac-sim/roboai/shared/data/image_exports/replicator_output/{dt.datetime.now().strftime('%Y%m%d_%H%M%S')}",
         semantic_segmentation=True,
         colorize_instance_segmentation=True,
         rgb=True,
     )
     writer.attach([render_product])
 
-    with rep.trigger.on_frame(num_frames=1000):
+    with rep.trigger.on_frame(num_frames=10):
         rep.randomizer.randomize_objects()
 
     rep.orchestrator.run()
