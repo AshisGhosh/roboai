@@ -3,6 +3,16 @@ import omni.replicator.core as rep
 import sys
 import random
 
+# Boolean switch to exclude training set assets
+exclude_finetune_usds = True
+
+finetune_usds = [
+    "003_cracker_box.usd",
+    "004_sugar_box.usd",
+    "005_tomato_soup_can.usd",
+    "006_mustard_bottle.usd"
+]
+
 with rep.new_layer():
     rep.settings.carb_settings("/omni/replicator/RTSubframes", 12)
     rep.settings.set_stage_up_axis("Y")
@@ -16,6 +26,10 @@ with rep.new_layer():
 
     # Retrieve all USD files from the directory
     usd_files = rep.utils.get_usd_files(OBJECTS_DIR, recursive=False)
+    
+    # Exclude specific assets if the switch is True
+    if exclude_finetune_usds:
+        usd_files = [file for file in usd_files if file.split('/')[-1] not in finetune_usds]
 
     # Verify by listing all retrieved USD files
     print("Loaded assets:")
@@ -50,11 +64,11 @@ with rep.new_layer():
         },
         "008_pudding_box.usd": {
             "semantic_class": "black and red Jello pudding box",
-            "height": 0.044908,
+            "height": 0.019236,
         },
         "009_gelatin_box.usd": {
             "semantic_class": "red Jello gelatin box",
-            "height": 0.036558,
+            "height": 0.014992,
         },
         "010_potted_meat_can.usd": {
             "semantic_class": "blue Spam potted meat tin",
@@ -87,19 +101,19 @@ with rep.new_layer():
         },
         "037_scissors.usd": {
             "semantic_class": "gray and yellow scissors",
-            "height": 0.098761,
+            "height": 0.007936,
         },
         "040_large_marker.usd": {
             "semantic_class": "black Expo dry erase marker",
-            "height": 0.060444,
+            "height": 0.009738, 
         },
         "051_large_clamp.usd": {
             "semantic_class": "black large spring clamp",
-            "height": 0.060833,
+            "height": 0.018206,
         },
         "052_extra_large_clamp.usd": {
             "semantic_class": "black extra large spring clamp",
-            "height": 0.082601,
+            "height": 0.018238,
         },
         "061_foam_brick.usd": {"semantic_class": "red foam brick", "height": 0.050928},
     }
@@ -127,7 +141,18 @@ with rep.new_layer():
 
                 with obj:
                     print(f"Modifying pose for {asset_name}")
-                    rep.modify.pose(rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180), seed=i))
+                    if asset_name in [
+                        "008_pudding_box.usd",
+                        "009_gelatin_box.usd",
+                        "037_scissors.usd",
+                        "040_large_marker.usd",
+                        "051_large_clamp.usd",
+                        "052_extra_large_clamp.usd"
+                        ]:
+                        rep.modify.pose(rotation=rep.distribution.uniform((0, 0, -180), (0, 0, 180), seed=i))
+                    else:
+                        rep.modify.pose(rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180), seed=i))
+                    
                     print(f"Scattering {asset_name}")
                     sys.stdout.flush()
                     try:
@@ -166,7 +191,7 @@ with rep.new_layer():
     )
     writer.attach([render_product])
 
-    with rep.trigger.on_frame(num_frames=1):
+    with rep.trigger.on_frame(num_frames=1000):
             rep.randomizer.randomize_objects()
 
     rep.orchestrator.run()
