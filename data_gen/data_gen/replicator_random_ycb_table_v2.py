@@ -10,7 +10,7 @@ finetune_usds = [
     "003_cracker_box.usd",
     "004_sugar_box.usd",
     "005_tomato_soup_can.usd",
-    "006_mustard_bottle.usd"
+    "006_mustard_bottle.usd",
 ]
 
 with rep.new_layer():
@@ -26,10 +26,12 @@ with rep.new_layer():
 
     # Retrieve all USD files from the directory
     usd_files = rep.utils.get_usd_files(OBJECTS_DIR, recursive=False)
-    
+
     # Exclude specific assets if the switch is True
     if exclude_finetune_usds:
-        usd_files = [file for file in usd_files if file.split('/')[-1] not in finetune_usds]
+        usd_files = [
+            file for file in usd_files if file.split("/")[-1] not in finetune_usds
+        ]
 
     # Verify by listing all retrieved USD files
     print("Loaded assets:")
@@ -105,7 +107,7 @@ with rep.new_layer():
         },
         "040_large_marker.usd": {
             "semantic_class": "black Expo dry erase marker",
-            "height": 0.009738, 
+            "height": 0.009738,
         },
         "051_large_clamp.usd": {
             "semantic_class": "black large spring clamp",
@@ -129,15 +131,21 @@ with rep.new_layer():
 
         with rep.utils.sequential():
             for i, asset in enumerate(selected_assets):
-                asset_name = asset.split('/')[-1]
-                object_data = objects_data.get(asset_name, {"semantic_class": "unknown object", "height": 0})
+                asset_name = asset.split("/")[-1]
+                object_data = objects_data.get(
+                    asset_name, {"semantic_class": "unknown object", "height": 0}
+                )
                 semantic_class = object_data["semantic_class"]
                 height = object_data["height"]
-                print(f"Adding asset: {asset_name} with semantic class: {semantic_class} and height: {height}")
+                print(
+                    f"Adding asset: {asset_name} with semantic class: {semantic_class} and height: {height}"
+                )
                 sys.stdout.flush()
 
                 obj = rep.create.from_usd(asset, semantics=[("class", semantic_class)])
-                plane_samp = rep.create.plane(scale=1, position=(0, 0, height), rotation=(90, 0, 0), visible=False)
+                plane_samp = rep.create.plane(
+                    scale=1, position=(0, 0, height), rotation=(90, 0, 0), visible=False
+                )
 
                 with obj:
                     print(f"Modifying pose for {asset_name}")
@@ -147,20 +155,28 @@ with rep.new_layer():
                         "037_scissors.usd",
                         "040_large_marker.usd",
                         "051_large_clamp.usd",
-                        "052_extra_large_clamp.usd"
-                        ]:
-                        rep.modify.pose(rotation=rep.distribution.uniform((0, 0, -180), (0, 0, 180), seed=i))
+                        "052_extra_large_clamp.usd",
+                    ]:
+                        rep.modify.pose(
+                            rotation=rep.distribution.uniform(
+                                (0, 0, -180), (0, 0, 180), seed=i
+                            )
+                        )
                     else:
-                        rep.modify.pose(rotation=rep.distribution.uniform((-90, 0, -180), (-90, 0, 180), seed=i))
-                    
+                        rep.modify.pose(
+                            rotation=rep.distribution.uniform(
+                                (-90, 0, -180), (-90, 0, 180), seed=i
+                            )
+                        )
+
                     print(f"Scattering {asset_name}")
                     sys.stdout.flush()
                     try:
                         rep.randomizer.scatter_2d(
-                            plane_samp, 
-                            seed=i, 
-                            no_coll_prims=no_coll_prims, 
-                            check_for_collisions=True
+                            plane_samp,
+                            seed=i,
+                            no_coll_prims=no_coll_prims,
+                            check_for_collisions=True,
                         )
                         print(f"Successfully scattered {asset_name}")
                     except Exception as e:
@@ -192,6 +208,6 @@ with rep.new_layer():
     writer.attach([render_product])
 
     with rep.trigger.on_frame(num_frames=1000):
-            rep.randomizer.randomize_objects()
+        rep.randomizer.randomize_objects()
 
     rep.orchestrator.run()
