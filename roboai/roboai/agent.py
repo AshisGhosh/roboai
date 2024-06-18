@@ -1,6 +1,7 @@
 import time
 import logging
 
+import litellm
 from litellm import completion
 from dotenv import load_dotenv
 
@@ -13,20 +14,21 @@ log.setLevel(logging.INFO)
 
 # litellm.success_callback = ["langfuse"]
 
-def get_caption(caption_json):
-    response = litellm.completion(
-        "model": "openrouter/huggingfaceh4/zephyr-7b-beta:free",
-        "messages": [
-            {
-                "role": "system",
-                "content": "You are a "
-            },
-            {
-                "role": "user",
-                "content": f"Generate caption based on {caption_json}"
-            }
-        ]
-    )
+# def get_caption(caption_json):
+#     response = litellm.completion(
+#         "model": "openrouter/huggingfaceh4/zephyr-7b-beta:free",
+#         "messages": [
+#             {
+#                 "role": "system",
+#                 "content": "You are a "
+#             },
+#             {
+#                 "role": "user",
+#                 "content": f"Generate caption based on {caption_json}"
+#             }
+#         ]
+#     )
+#     return response
 
 
 class Agent:
