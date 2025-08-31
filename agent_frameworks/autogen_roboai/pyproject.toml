@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = ">=3.10,<3.13"
-pyautogen = "^0.2.21"
+ag2 = "^0.2.21"
 
 
 [build-system]
